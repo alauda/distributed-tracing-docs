@@ -1,0 +1,20 @@
+---
+weight: 10
+---
+
+:::tip
+Refer to the [API Documentation Structure](https://product-doc-guide.alauda.cn/arch/site_arch.html#api_structure) for the structure of API documents.
+
+For configuration methods of API documentation, see the [Guide to Automatically Generating API Documentation](https://product-doc-guide.alauda.cn/guide/api_doc.html).
+
+You can view an [Kubernetes API Documentation Example](https://product-doc-guide.alauda.cn/template/apis/example/k8s_api_example/index.html) for reference.
+
+:::
+
+# ExampleResource [group/version]
+
+Remove the code block and replace the `name` parameter value with the value of the `metadata.name` field in the CRD file for the resource:
+
+```mdx
+<K8sAPI name="crdNameWithGroup" />
+```

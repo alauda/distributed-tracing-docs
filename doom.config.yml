@@ -1,0 +1,14 @@
+title: Alauda Distributed Tracing
+logoText: Alauda Distributed Tracing
+lang: en
+root: docs
+api:
+  crds:
+    - docs/shared/crds/**/*.{yaml,yml}
+  openapis:
+    - docs/shared/openapis/**/*.{json,yaml,yml}
+permission:
+  functionresources:
+    - docs/shared/functionresources/*.{yaml,yml}
+  roletemplates:
+    - docs/shared/roletemplates/*.{yaml,yml}
