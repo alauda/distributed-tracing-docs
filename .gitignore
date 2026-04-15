@@ -8,3 +8,7 @@
 !.yarn/sdks
 !.yarn/versions
 **/public/_remotes
+
+.DS_Store
+tmp
+.claude

@@ -1,0 +1,15 @@
+---
+weight: 30
+---
+
+# Configuring the Jaeger Metrics
+
+Both the Jaeger v2 instance and the OpenTelemetry Collector deployed as part of the Alauda Distributed Tracing expose internal metrics that provide insights into their performance and operational health. These metrics cover areas such as memory usage, CPU utilization, span throughput, and exporter statistics.
+
+When `spec.observability.metrics.enableMetrics` is set to `true` in an `OpenTelemetryCollector` CR, the Operator automatically creates the corresponding Prometheus `ServiceMonitor` or `PodMonitor` resource, so you do not need to configure scrape targets manually.
+
+:::note
+The Alauda Distributed Tracing installation guide already enables metrics collection for both the Jaeger instance and the OpenTelemetry Collector by default. You only need to follow this guide if you want to adjust the metrics configuration or troubleshoot metrics collection.
+:::
+
+For detailed instructions on enabling and verifying Collector metrics, see <ExternalSiteLink name="opentelemetry" href="/configuration/collector-metrics/index.html" children="Configuring the Collector Metrics" /> in the Alauda Build of OpenTelemetry v2 documentation.
