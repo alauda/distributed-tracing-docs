@@ -1,0 +1,152 @@
+---
+weight: 10
+---
+
+# Uninstalling Alauda Distributed Tracing
+
+You can uninstall the Alauda Distributed Tracing components from your Alauda Container Platform. This can be done through the Alauda Container Platform web console or the command line interface (CLI).
+
+Uninstalling the Alauda Distributed Tracing involves deleting the following components:
+
+- OpenTelemetry Collector (`otel`) instance
+- Jaeger v2 (`jaeger`) instance
+- Jaeger namespace
+
+Optionally, you can also uninstall the Alauda Build of OpenTelemetry v2 Operator if it is no longer needed.
+
+## Uninstalling via the web console
+
+**Procedure**
+
+<Steps>
+
+### Delete the OpenTelemetry Collector instance
+
+1. In the Alauda Container Platform web console, navigate to **Administrator**.
+2. Select **Marketplace** > **OperatorHub**.
+3. Search for the `Alauda Build of OpenTelemetry v2`.
+4. Locate the Alauda Build of OpenTelemetry v2, and click to select it.
+5. Click **All Instances** tab.
+6. From the **Filter by instance type** dropdown, select `OpenTelemetryCollector`.
+7. Locate the `otel` instance in the Jaeger namespace (default: `jaeger-system`), click the "**⋮**" button, then click **Delete** in the menu.
+8. When prompted, confirm the action by clicking **Delete**.
+
+### Delete the Jaeger v2 instance
+
+In the **Alauda Build of OpenTelemetry v2** view of **OperatorHub**:
+
+1. Click **All Instances** tab.
+2. From the **Filter by instance type** dropdown, select `OpenTelemetryCollector`.
+3. Locate the `jaeger` instance in the Jaeger namespace (default: `jaeger-system`), click the "**⋮**" button, then click **Delete** in the menu.
+4. When prompted, confirm the action by clicking **Delete**.
+
+### Delete the Jaeger namespace
+
+Delete the Jaeger namespace using the CLI:
+
+```bash
+kubectl delete namespace jaeger-system
+```
+
+:::note
+Replace `jaeger-system` with the namespace you used during installation if it differs from the default.
+:::
+
+### (Optional) Uninstall the Alauda Build of OpenTelemetry v2 Operator
+
+:::warning
+The Alauda Build of OpenTelemetry v2 Operator is installed cluster-wide and may be used by other components such as OpenTelemetry Collector instances in other namespaces. Before uninstalling the Operator, verify that no other `OpenTelemetryCollector` or `Instrumentation` resources depend on it.
+:::
+
+If the Operator is no longer needed, uninstall it from the web console:
+
+In the **Alauda Build of OpenTelemetry v2** view of **OperatorHub**:
+
+1. Click the **Uninstall** button in the top-right corner.
+2. In the confirmation prompt, read the uninstall notice: *Removing the operator will not remove any of its custom resource definitions or managed resources. If you have created a resource instance, you need to delete it manually.*
+3. Click **Uninstall**.
+
+For more details, see <ExternalSiteLink name="opentelemetry" href="/uninstalling/uninstalling-opentelemetry/uninstalling-opentelemetry.html" children="Uninstalling Alauda Build of OpenTelemetry v2" />.
+
+</Steps>
+
+## Uninstalling via the CLI
+
+**Procedure**
+
+<Steps>
+
+### Set environment variables
+
+Set the environment variables to match the values used during installation:
+
+```bash
+export JAEGER_NS="jaeger-system"
+export JAEGER_INSTANCE_NAME="jaeger"
+```
+
+:::note
+If you customized these values during installation, replace them with your actual values.
+:::
+
+### Delete the OpenTelemetry Collector instance
+
+Delete the `otel` OpenTelemetry Collector instance:
+
+```bash
+kubectl delete opentelemetrycollector otel -n ${JAEGER_NS}
+```
+
+**Example output**
+
+```
+opentelemetrycollector.opentelemetry.io "otel" deleted
+```
+
+### Delete the Jaeger v2 instance
+
+Delete the Jaeger OpenTelemetry Collector instance:
+
+```bash
+kubectl delete opentelemetrycollector ${JAEGER_INSTANCE_NAME} -n ${JAEGER_NS}
+```
+
+**Example output**
+
+```
+opentelemetrycollector.opentelemetry.io "jaeger" deleted
+```
+
+### Delete the Jaeger namespace
+
+```bash
+kubectl delete namespace ${JAEGER_NS}
+```
+
+**Example output**
+
+```
+namespace "jaeger-system" deleted
+```
+
+### (Optional) Uninstall the Alauda Build of OpenTelemetry v2 Operator
+
+:::warning
+The Alauda Build of OpenTelemetry v2 Operator is installed cluster-wide and may be used by other components such as OpenTelemetry Collector instances in other namespaces. Before uninstalling the Operator, verify that no other `OpenTelemetryCollector` or `Instrumentation` resources depend on it.
+:::
+
+If the Operator is no longer needed, delete the `opentelemetry-operator2` subscription:
+
+```bash
+kubectl delete subscription opentelemetry-operator2 -n opentelemetry-operator2
+```
+
+**Example output**
+
+```
+subscription.operators.coreos.com "opentelemetry-operator2" deleted
+```
+
+For more details, see <ExternalSiteLink name="opentelemetry" href="/uninstalling/uninstalling-opentelemetry/uninstalling-opentelemetry.html" children="Uninstalling Alauda Build of OpenTelemetry v2" />.
+
+</Steps>

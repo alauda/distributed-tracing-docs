@@ -1,7 +1,7 @@
 {
   "packageManager": "yarn@4.9.4",
   "scripts": {
-    "dev": "doom dev",
+    "dev": "doom dev --port 4444",
     "build": "doom build",
     "lint": "doom lint",
     "prepare": "simple-git-hooks",

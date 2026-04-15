@@ -1,0 +1,55 @@
+---
+weight: 30
+---
+
+# About Alauda Distributed Tracing
+
+Alauda Distributed Tracing records how a single request travels across services in a distributed application. It helps teams follow request paths end to end, understand latency across service boundaries, and troubleshoot failures in cloud-native microservice environments.
+
+## Key concepts in distributed tracing
+
+In a modern application, a single user action often triggers work across many services. Distributed tracing correlates those units of work so the full execution path can be analyzed as one transaction.
+
+A trace represents the end-to-end path of a request through the system. Each trace contains one or more spans.
+
+A span represents a logical unit of work. It records the operation name, start time, duration, and optional metadata such as tags and logs. Spans can be nested to show causal relationships between upstream and downstream operations.
+
+As a service owner, you can use Alauda Distributed Tracing to instrument applications, understand service dependencies, profile latency, and investigate failures.
+
+With Alauda Distributed Tracing, you can:
+
+- Monitor distributed transactions
+- Optimize performance and latency
+- Perform root cause analysis
+
+Alauda Distributed Tracing can work together with other observability components:
+
+- <ExternalSiteLink name="opentelemetry" href="/" children="Alauda Build of OpenTelemetry v2" /> for collecting, processing, and forwarding telemetry data to Jaeger.
+- <ExternalSiteLink name="servicemesh" href="/integration/observability/kiali.html" children="Integration with Kiali" /> for opening trace data from the service mesh console.
+
+## Features
+
+Alauda Distributed Tracing provides the following capabilities:
+
+- <ExternalSiteLink name="servicemesh" href="/integration/observability/kiali.html" children="Integration with Kiali" />. When configured with Alauda Service Mesh, you can open distributed tracing data directly from the Kiali console.
+- High scalability. The Jaeger backend is designed to scale horizontally with application traffic and operational growth.
+- Distributed context propagation. Trace context can be propagated across service boundaries so related spans are connected into a complete end-to-end trace.
+- Zipkin compatibility. Jaeger can ingest Zipkin-formatted tracing data, which helps teams migrate from existing Zipkin instrumentation with minimal changes.
+
+For a broader capability overview, see [Features](../features.mdx).
+
+## Architecture
+
+Alauda Distributed Tracing combines Jaeger v2, Alauda Build of OpenTelemetry v2, and Elasticsearch to collect, store, and visualize trace data on Kubernetes.
+
+The main components are:
+
+- **Alauda Distributed Tracing (Jaeger)**: This component is based on Jaeger v2 and provides the tracing backend.
+    - **Jaeger Binary**. The main runtime is built on the OpenTelemetry Collector framework and can run role-specific deployments such as `collector` and `query` to receive, store, search, and visualize trace data.
+    - **Jaeger ES Rollover**: This component manages Elasticsearch rollover resources such as templates, aliases, and index rotation so long-running clusters can retain tracing data efficiently.
+- **<ExternalSiteLink name="opentelemetry" href="/" children="Alauda Build of OpenTelemetry v2" />**: This component is based on the open source OpenTelemetry project and provides a supported distribution for receiving, processing, and exporting telemetry data.
+    - **OpenTelemetry Operator**: The Operator deploys and manages Jaeger instances on the cluster and reconciles the resources required for tracing pipelines.
+    - **OpenTelemetry Collector**: The Collector is a vendor-neutral component that can be placed in front of Jaeger to receive telemetry, enrich or transform it, and forward it to one or more backends. It is also a common destination for instrumentation libraries that export telemetry data by using open standards such as OTLP.
+- **Elasticsearch**: Elasticsearch stores trace data for search and analysis and serves as the backend storage for Alauda Distributed Tracing.
+
+For a broader architecture overview, see [Architecture](../architecture.mdx).
