@@ -1,0 +1,43 @@
+---
+weight: 10000
+---
+
+# Alauda Distributed Tracing v2.0.0
+
+Alauda Distributed Tracing v2.0.0 is the first independently released version of the Alauda Distributed Tracing documentation site. This release is delivered through Alauda Build of OpenTelemetry v2 Operator 0.147.0, integrating with the open source Jaeger 2.16.0. It provides a production-ready distributed tracing solution built on Jaeger v2, enabling teams to collect, store, and visualize traces across microservices on Alauda Container Platform.
+
+:::note
+Only the features documented on this site are supported. Undocumented features are currently unsupported. If you need assistance with a specific feature, contact Alauda support.
+:::
+
+## Supported Features
+
+- **[Jaeger v2 backend](../../architecture.mdx)**: The tracing backend is built on the OpenTelemetry Collector framework, supporting role-specific deployments including `collector` for receiving and storing trace data, and `query` for serving the Jaeger UI and query APIs. Jaeger ES Rollover manages Elasticsearch index lifecycle operations such as templates, aliases, and index rotation.
+
+- **Multi-protocol ingestion**: Accepts trace data from multiple protocols and formats, including OTLP (gRPC and HTTP), Jaeger (gRPC and Thrift), Zipkin (v1 and v2), and Kafka.
+
+- **[Storage backend](../../configuration/storage-backends/)**: Elasticsearch 8.x is the supported storage backend, with index rollover using aliases and Index Lifecycle Management (ILM) for automatic retention and rotation.
+
+- **Sampling strategies**: Supports head-based sampling with centralized remote configuration (both static and adaptive) and tail-based sampling for making sampling decisions after traces are complete.
+
+- **[Service Performance Monitoring (SPM)](../../configuration/spm.mdx)**: Monitors service performance trends by computing aggregate RED metrics (Request rate, Error rate, Duration) from trace data using the SpanMetrics Connector and a PromQL-compatible metrics backend.
+
+- **[Observability and metrics](../../configuration/jaeger-metrics.mdx)**: Jaeger v2 and OpenTelemetry Collector components expose Prometheus metrics by default, with automatic ServiceMonitor and PodMonitor creation for integration with the monitoring stack.
+
+- **[Deployment and management](../../installing/installing-distributed-tracing.mdx)**: Jaeger instances are deployed and managed through the OpenTelemetry Operator on Kubernetes. Both web console and CLI installation methods are supported, along with [taints and tolerations](../../installing/taints-and-tolerations.mdx) for pod scheduling.
+
+- **Integration**: Integrates with <ExternalSiteLink name="opentelemetry" href="/" children="Alauda Build of OpenTelemetry v2" /> for telemetry collection and forwarding, with <ExternalSiteLink name="servicemesh" href="/integration/observability/kiali.html" children="Alauda Service Mesh (Kiali)" /> for opening trace data from the service mesh console, and with Alauda Container Platform for authentication through OAuth2 Proxy.
+
+## New Features and Enhancements
+
+This release introduces the following key capabilities:
+
+- **Jaeger v2 architecture**: The tracing backend has been rebuilt on the OpenTelemetry Collector framework, replacing the legacy standalone component architecture with a unified, extensible pipeline model.
+
+- **Unified Operator management**: Jaeger instances are deployed and managed through the OpenTelemetry Operator, providing a single control plane for both tracing and telemetry collection infrastructure.
+
+- **Elasticsearch Index Lifecycle Management**: Automated index rollover and lifecycle management through Jaeger ES Rollover enables efficient long-term trace data retention with configurable rollover policies and automatic index cleanup.
+
+- **Service Performance Monitoring**: The SPM feature computes aggregate RED metrics from span data through the SpanMetrics Connector, providing a dedicated Monitor tab in the Jaeger UI for tracking service performance trends over time.
+
+- **Multi-protocol trace ingestion**: The platform accepts trace data from OTLP, Jaeger, Zipkin, and Kafka protocols simultaneously, enabling gradual migration from existing instrumentation without disrupting existing data flows.
