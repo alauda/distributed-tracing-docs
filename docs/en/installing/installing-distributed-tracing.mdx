@@ -385,6 +385,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
             - --oidc-issuer-url=${OIDC_ISSUER}
             - --scope=openid profile email groups ext
             - --email-domain=*
+            - --code-challenge-method=S256
             - --insecure-oidc-allow-unverified-email=true
             - --cookie-secure=false
             - --skip-provider-button=true
