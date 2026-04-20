@@ -223,10 +223,13 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 8. Create a Secret for the OAuth2 Proxy, which is used to integrate the Jaeger UI with the Alauda Container Platform authentication:
 
     ```bash
+    # Generate a cookie secret for the OAuth2 Proxy:
+    OAUTH2_PROXY_COOKIE_SECRET=$(dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | tr -d -- '\n' | tr -- '+/' '-_')
+    # Create the Secret:
     kubectl create secret generic ${JAEGER_INSTANCE_NAME}-oauth2-proxy \
       --namespace=${JAEGER_NS} \
       --from-literal=OAUTH2_PROXY_CLIENT_SECRET=${OIDC_CLIENT_SECRET} \
-      --from-literal=OAUTH2_PROXY_COOKIE_SECRET=${OIDC_CLIENT_SECRET}
+      --from-literal=OAUTH2_PROXY_COOKIE_SECRET=${OAUTH2_PROXY_COOKIE_SECRET}
     ```
 
 9. Create a file named `jaeger.yaml` with the following content:
