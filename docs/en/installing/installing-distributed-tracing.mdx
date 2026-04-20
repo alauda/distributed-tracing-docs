@@ -536,12 +536,21 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
             endpoint: "${JAEGER_INSTANCE_NAME}-collector.${JAEGER_NS}.svc.cluster.local:4317"
             tls:
               insecure: true
+          prometheus:
+            add_metric_suffixes: false # Jaeger expects standard OTel metric names without _total suffixes
+            endpoint: "0.0.0.0:8889"
+            resource_to_telemetry_conversion:
+              enabled: true # by default resource attributes are dropped
         service:
           pipelines:
             traces:
               receivers: [otlp, zipkin]
               processors: [memory_limiter, batch]
               exporters: [debug, otlp/traces] # [!code callout]
+            metrics:
+              receivers: [otlp]
+              processors: [memory_limiter, batch]
+              exporters: [debug, prometheus]
           telemetry:
             metrics:
               readers:
@@ -660,12 +669,6 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
       config:
         connectors:
           spanmetrics: {}
-        exporters:
-          prometheus:
-            add_metric_suffixes: false # Jaeger expects standard OTel metric names without _total suffixes
-            endpoint: "0.0.0.0:8889"
-            resource_to_telemetry_conversion:
-              enabled: true # by default resource attributes are dropped
         service:
           pipelines:
             traces:
