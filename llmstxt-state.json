@@ -1,0 +1,204 @@
+{
+  "version": 1,
+  "generator_version": 3,
+  "project_name": "Alauda Distributed Tracing",
+  "summary": "Documentation for Alauda Distributed Tracing, a Jaeger v2-based tracing solution integrated with OpenTelemetry and Elasticsearch on Kubernetes.",
+  "generated_at": "2026-05-16T07:49:30Z",
+  "include_patterns": [
+    "**/*.md",
+    "**/*.mdx"
+  ],
+  "exclude_patterns": [
+    "**/node_modules/**",
+    "**/.git/**",
+    "**/llms.txt",
+    "**/CHANGELOG.md",
+    "**/CONTRIBUTING.md",
+    "**/AGENTS.md",
+    "**/README.md",
+    ".llmstxt-cache/**",
+    "**/.llmstxt-cache/**",
+    "llms.txt",
+    "llmstxt-state.json",
+    "**/llmstxt-state.json"
+  ],
+  "grouping_base_path": ".",
+  "description_max_words": 150,
+  "files": {
+    "docs/en/about/about-distributed-tracing.mdx": {
+      "sha256": "6def4ad8811478557d7e0915cbe65471650eb992ad326354e44fc89e9128ac51",
+      "size": 4173,
+      "description": "Conceptual introduction to Alauda Distributed Tracing, covering core ideas of traces and spans, the service-owner workflows it supports (instrumenting apps, profiling latency, root-cause analysis), and its main capabilities including high scalability, distributed context propagation, Zipkin compatibility, and integration with Kiali. Outlines the component stack: Jaeger v2 (Jaeger Binary plus Jaeger ES Rollover), Alauda Build of OpenTelemetry v2 (OpenTelemetry Operator and Collector), and Elasticsearch for storage.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/about/index.mdx": {
+      "sha256": "32135b5d0326b32d1fa3c82d8616699c1c980db0cc16e3f5971b0787c3b144b3",
+      "size": 63,
+      "description": "Landing entry for the About section, which collects product overview material for Alauda Distributed Tracing including the product introduction, architecture summary, lifecycle policies for Alauda Build of Jaeger and Alauda Build of OpenTelemetry v2, and release notes.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/about/lifecycle-policy/alauda-build-of-jaeger.mdx": {
+      "sha256": "c10278fecd0394a9ac85b37533f380a34835bac0c89f913b43c236a0b71a9c6c",
+      "size": 861,
+      "description": "Lifecycle schedule for Alauda Build of Jaeger, listing v2.0.z released 2026-04-21 with end of support 2027-10-21, a 4-month release cadence, and an 18-month maintenance window during which Alauda supplies bug-fix and security patches plus upgrade assistance.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/about/lifecycle-policy/alauda-build-of-opentelemetry.mdx": {
+      "sha256": "2b989a2aa893b5ea8d9ccce7818fb36dc15cb1e42e665fdc4c9fc16e65ce23fb",
+      "size": 461,
+      "description": "Notes that Alauda Distributed Tracing relies on the Alauda Build of OpenTelemetry v2 Operator to deploy and manage Jaeger instances, and redirects readers to the Alauda Build of OpenTelemetry v2 product's own lifecycle policy page for version, support, and maintenance details.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/about/lifecycle-policy/index.mdx": {
+      "sha256": "b5b8cb22343ad480b4cea3f329e7d1c78c1f6f7bfb73a2c3b3dd72d1a1ce485d",
+      "size": 139,
+      "description": "Entry point for the Lifecycle Policy section, which groups the support windows, release cadence, and maintenance commitments for Alauda Build of Jaeger and the Alauda Build of OpenTelemetry v2 Operator that underpins Alauda Distributed Tracing.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/about/release-notes/index.mdx": {
+      "sha256": "f149453dfc98fe3f11f35166a9086d62bc43badfe0248b8ba2deaca3b179295a",
+      "size": 159,
+      "description": "Entry point for the Release Notes section, which tracks each Alauda Distributed Tracing release with its supported features, new capabilities, and enhancements.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/about/release-notes/v2-0-0.mdx": {
+      "sha256": "c342eb49d06ce8d3c3f60cf7e4230410dec2350bcbe0aa1da93638b9a5f9d19e",
+      "size": 4242,
+      "description": "Release notes for Alauda Distributed Tracing v2.0.0, the first independently released version, delivered through Alauda Build of OpenTelemetry v2 Operator 0.147.0 with Jaeger 2.16.0. Documents supported features (Jaeger v2 backend with collector and query roles, multi-protocol ingestion for OTLP, Jaeger, Zipkin and Kafka, Elasticsearch 8.x storage with ILM, head- and tail-based sampling, Service Performance Monitoring, Prometheus metrics, Operator-driven deployment) and new capabilities including the OpenTelemetry Collector-based architecture, unified Operator management, automated index rollover, and SPM via the SpanMetrics Connector.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/apis/index.mdx": {
+      "sha256": "6fbb8970c1513fcd4ec4fd62ef265aad96e22688403da378b36260bbfb668d3b",
+      "size": 72,
+      "description": "Entry point for the API Reference section, which catalogs the Kubernetes APIs exposed by Alauda Distributed Tracing, including the OpenTelemetry Operator custom resources used to deploy and manage Jaeger instances.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/apis/intro.mdx": {
+      "sha256": "ba573e272a43d002cda4be47046ab94646c34a62222106375a4e866a83493722",
+      "size": 55,
+      "description": "Introduction page for the API Reference, rendering the shared AcpApisOverview component that frames how Alauda Container Platform APIs are organized for Alauda Distributed Tracing.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/apis/kubernetes_apis/index.mdx": {
+      "sha256": "f3cb72e118a2be58877705195ecdfb5494693868eceb886b05d4d71db58479a0",
+      "size": 72,
+      "description": "Entry point for the Kubernetes APIs subsection, which lists the custom resources Alauda Distributed Tracing relies on, in particular the OpenTelemetry Operator API used to provision Jaeger collector and query deployments.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/apis/kubernetes_apis/opentelemetry-operator.mdx": {
+      "sha256": "5ba5952bef4384df477ae799e8ae6bb6aed8a14743eabebafee73bf5b28e106b",
+      "size": 273,
+      "description": "Pointer to the OpenTelemetry Operator API surface used by Alauda Distributed Tracing, specifically the upstream `opentelemetrycollectors.opentelemetry.io/v1beta1` (OpenTelemetryCollector) custom resource reference on GitHub.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/architecture.mdx": {
+      "sha256": "c4973faa436c531351aa8da1695ee1d362cb2a76d6997e53146e592fbedaff48",
+      "size": 8567,
+      "description": "Architecture reference for Alauda Distributed Tracing based on Jaeger v2 and Alauda Build of OpenTelemetry v2 with Elasticsearch storage. Explains the Jaeger binary's role-based deployments (`collector`, `query`, `es-rollover`), the direct-to-storage data path, and optional placement of an OpenTelemetry Collector in front of Jaeger as a sidecar or remote cluster (including Remote Sampling protocol support). Enumerates the OpenTelemetry Collector components shipped in the Jaeger binary: receivers (OTLP, Jaeger, Kafka, Zipkin, No-op), processors (Batch, Tail Sampling, Memory Limiter, Attributes, Filter), exporters (OTLP, OTLP HTTP, Kafka, Prometheus, Debug, No-op), Span Metrics and Forward connectors, and Health Check v2/zPages/pprof extensions, plus Jaeger-specific extensions like Jaeger Storage Extension, Jaeger Storage Exporter, Jaeger Query Extension, Adaptive Sampling Processor, and Remote Sampling Extension.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/configuration/index.mdx": {
+      "sha256": "ba6e3aee426fa6f68c56278fe5c05de4a3a2557962783aba1854b77a902bb41b",
+      "size": 162,
+      "description": "Entry point for the Configuration section, which gathers tuning and post-install topics for Alauda Distributed Tracing such as exposing Jaeger and Collector metrics, configuring Service Performance Monitoring with the SpanMetrics Connector, and selecting storage backends.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/configuration/jaeger-metrics.mdx": {
+      "sha256": "c82f7c78163720fe818333ac602ab064f07780081fd99d41acae7bd23baf3a86",
+      "size": 1189,
+      "description": "How the Jaeger v2 instance and OpenTelemetry Collector expose internal Prometheus metrics covering memory, CPU, span throughput, and exporter statistics. Setting `spec.observability.metrics.enableMetrics: true` on an `OpenTelemetryCollector` CR makes the Operator automatically create the matching `ServiceMonitor` or `PodMonitor`, with a note that the default install already enables this and a pointer to the Alauda Build of OpenTelemetry v2 collector-metrics guide for deeper customization.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/configuration/spm.mdx": {
+      "sha256": "3e367165b1c0197a645e2b7e12fb82f6db1c055a6815edfc2cd4182c5e85a39f",
+      "size": 3034,
+      "description": "How to enable Service Performance Monitoring (SPM), which renders as the Monitor tab in the Jaeger UI and aggregates RED metrics (request rate, error rate, P95/P75/P50 durations) plus an Impact metric. Describes the architecture: the SpanMetrics Connector generates `traces_span_metrics_calls` (counter, with `status_code` distinguishing errors via `STATUS_CODE_ERROR`) and `traces_span_metrics_duration` (histogram with `_count`, `_sum`, `_bucket` series), exports them to a PromQL-compatible backend, and is read back through the `jaeger_query` extension. Includes example YAML for wiring the `spanmetrics` connector into the OpenTelemetry Collector traces pipeline, exporting to Prometheus, and pointing `jaeger_storage.metric_backends` plus `jaeger_query.metrics` at the external store.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/configuration/storage-backends/elasticsearch.mdx": {
+      "sha256": "32bdd2108986638d43c3827af76fc9323b2ce1a5b7ebccec091af3a85bb2a5d8",
+      "size": 5250,
+      "description": "Configures Elasticsearch 8.x as a Jaeger v2 storage backend, covering shard/replica sizing, index rollover initialization with the `jaeger-es-rollover:2.16.0-r1` container (`init http://localhost:9200`), and the `use_aliases: true` config flag. Documents Index Lifecycle Management (ILM) as an alternative to manual rollover, including a sample `jaeger-ilm-policy` curl PUT request defining hot rollover (`max_age`) and delete phases, plus the `ES_USE_ILM=true` env var and `use_ilm: true` Jaeger setting needed to activate it.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/configuration/storage-backends/index.mdx": {
+      "sha256": "2e4b35120515609a6e751cf299794904aaa894ec14aacf9214c4b65657801bba",
+      "size": 482,
+      "description": "Indexes the storage backends supported by Jaeger v2 for persistent trace storage and querying; in Alauda Distributed Tracing this is limited to Elasticsearch as a distributed search and analytics engine for large-scale trace data with full-text search.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/features.mdx": {
+      "sha256": "9cdcee0cce6006261ab7302bb7e27cea71b11c6754e489942961c1cbf5cd18c2",
+      "size": 2628,
+      "description": "Catalogs Jaeger v2 capabilities shipped in Alauda Distributed Tracing: horizontal scalability with no single points of failure, cloud-native deployment via the Alauda Build of OpenTelemetry v2 Operator, OTLP ingestion, Elasticsearch 8.x storage (the only supported backend), head- and tail-based sampling, a React-based Jaeger UI capable of rendering traces with tens of thousands of spans, Prometheus metrics with zap structured logs, Service Performance Monitoring (SPM) computing RED-style aggregate metrics, and Zipkin wire-format compatibility (Thrift, JSON v1/v2, Protobuf over HTTP).",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/index.mdx": {
+      "sha256": "ea8d719fb06b69c8f8fa90c79d3ec2a67457c854f2c664fb78f523febe3f6960",
+      "size": 48,
+      "description": "Top-level navigation landing for the Alauda Distributed Tracing documentation; renders a sectional `<Overview>` table-of-contents linking to introduction, features, installing, configuration (storage backends, SPM, metrics), uninstalling, and troubleshooting.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/installing/index.mdx": {
+      "sha256": "305e8c2f6ebb0316df89419d1b5c3bdb6ff8f0ef8a0ff03d72bd5a39a82e2046",
+      "size": 158,
+      "description": "Indexes the installation guides for Alauda Distributed Tracing, grouping the prerequisite steps (Alauda Build of OpenTelemetry v2 Operator install, Jaeger v2 deployment, OpenTelemetry Collector forwarding) and node-scheduling topics such as taints and tolerations.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/installing/installing-distributed-tracing.mdx": {
+      "sha256": "97018e88f203406dcd8f43966ceeb8fcc625cfd3dd4519c1985693542f94805c",
+      "size": 29610,
+      "description": "End-to-end procedure for installing Alauda Distributed Tracing on Alauda Container Platform: install the Alauda Build of OpenTelemetry v2 Operator, then deploy Jaeger v2 as an `OpenTelemetryCollector` CR with Elasticsearch backend, OAuth2 Proxy sidecar for ACP Dex SSO, `jaeger-es-rollover` Job to create ILM-managed index templates/aliases (`jaeger-ilm-policy`, `${CLUSTER_NAME}` index prefix), `jaeger_storage`/`jaeger_query` extensions, an Ingress publishing the Jaeger UI at `/clusters/<cluster>/jaeger`, and finally a downstream OpenTelemetry Collector forwarding OTLP/Zipkin traces. Includes verification via `telemetrygen` and an optional SPM section that adds a `spanmetrics` connector plus a PromQL `metric_backends` pointing at ACP monitoring to enable the Jaeger Monitor tab.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/installing/taints-and-tolerations.mdx": {
+      "sha256": "a6557b4d38ef6644cf7cafd33562f5bf0d5d5a07e755b96b326a04534c35eaa5",
+      "size": 590,
+      "description": "Pointer page explaining that node selection for OpenTelemetry Collector and Jaeger pods is done via `nodeSelector` and `tolerations` on the `OpenTelemetryCollector` custom resource; defers detailed instructions to the Alauda Build of OpenTelemetry v2 documentation's `Using Taints and Tolerations` guide.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/troubleshooting.mdx": {
+      "sha256": "fb44de7c928fed6eecc6ba60277e2f3d429caf5a6549422c6b350309b02a2210",
+      "size": 4366,
+      "description": "Diagnostic checklist for missing or unprocessed spans in the Jaeger v2 backend: verify the sampler (e.g. force `parentbased_always_on` via `OTEL_TRACES_SAMPLER`), use the SDK debug exporter, bypass intermediate OpenTelemetry Collectors to isolate the issue, fix common container networking mistakes (unexposed ports, `localhost` vs `0.0.0.0`, mismatched network namespaces), raise the collector log level to `debug` in the `OpenTelemetryCollector` spec, and scrape `:8888/metrics` to watch `otelcol_receiver_accepted_spans` and `otelcol_exporter_sent_spans`. Also notes service-mesh (Istio) span-loss caveats.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/uninstalling/index.mdx": {
+      "sha256": "4dc18fbb4cbd71fb75d580dd0064458d52e8dd05b0f07304066886b93ad614df",
+      "size": 163,
+      "description": "Indexes the uninstallation guides for Alauda Distributed Tracing, covering removal of the `otel` OpenTelemetry Collector instance, the `jaeger` Jaeger v2 instance, the Jaeger namespace, and optionally the Alauda Build of OpenTelemetry v2 Operator.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    },
+    "docs/en/uninstalling/uninstalling-distributed-tracing.mdx": {
+      "sha256": "5d1fdf2730f7f4b7c3e2cce9ac10ad650a90bbade0638d0745cc26fadf2626f2",
+      "size": 4810,
+      "description": "Step-by-step removal of Alauda Distributed Tracing components from Alauda Container Platform via both the web console (OperatorHub > Alauda Build of OpenTelemetry v2 > All Instances) and the CLI: delete the `otel` and `jaeger` `OpenTelemetryCollector` instances with `kubectl delete opentelemetrycollector`, delete the `jaeger-system` namespace, and optionally remove the cluster-wide `opentelemetry-operator2` subscription after confirming no other `OpenTelemetryCollector` or `Instrumentation` resources depend on it.",
+      "generation_method": "ai_agent_reading",
+      "updated_at": "2026-05-16T07:49:30Z"
+    }
+  }
+}

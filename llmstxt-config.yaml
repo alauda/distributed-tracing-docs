@@ -1,0 +1,24 @@
+# llms.txt Generator Configuration for distributed-tracing-docs
+# Pure-docs repository — Alauda Distributed Tracing documentation
+
+project_name: "Alauda Distributed Tracing"
+summary: "Documentation for Alauda Distributed Tracing, a Jaeger v2-based tracing solution integrated with OpenTelemetry and Elasticsearch on Kubernetes."
+
+include_patterns:
+  - "**/*.md"
+  - "**/*.mdx"
+
+exclude_patterns:
+  - "**/node_modules/**"
+  - "**/.git/**"
+  - "**/llms.txt"
+  - "**/CHANGELOG.md"
+  - "**/CONTRIBUTING.md"
+  - "**/AGENTS.md"
+  - "**/README.md"
+  - ".llmstxt-cache/**"
+  - "**/.llmstxt-cache/**"
+
+batch_size: 15
+grouping_base_path: "."
+description_max_words: 150
