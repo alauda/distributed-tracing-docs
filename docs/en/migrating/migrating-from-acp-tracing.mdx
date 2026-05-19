@@ -130,13 +130,35 @@ Export the legacy Jaeger resources so that you can rebuild them (and roll back i
 ```bash {name=migrate-acp-tracing:backup}
 mkdir -p ./acp-tracing-backup
 
+# Jaeger CR (covers the jaeger-prod instance in cpaas-system).
 kubectl get jaeger -A -o yaml \
   > ./acp-tracing-backup/jaegers.yaml
 
+# Alauda build of Jaeger Operator Subscription and CSV.
 kubectl get subscription -n jaeger-operator jaeger-operator -o yaml \
   > ./acp-tracing-backup/jaeger-v1-subscription.yaml || true
 kubectl -n jaeger-operator get csv -o yaml \
   > ./acp-tracing-backup/jaeger-v1-csv.yaml || true
+
+# Supporting resources for jaeger-prod in cpaas-system. Each is removed in
+# Cleanup, so back them up here so rollback can restore them. Skip silently
+# (|| true) if a resource is not present in this environment.
+kubectl -n cpaas-system get ingress     jaeger-prod-query         -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-ingress.yaml             || true
+kubectl -n cpaas-system get podmonitor  jaeger-prod-monitor       -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-podmonitor.yaml          || true
+kubectl -n cpaas-system get rolebinding jaeger-prod-rb            -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-rolebinding.yaml         || true
+kubectl -n cpaas-system get role        jaeger-prod-role          -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-role.yaml                || true
+kubectl -n cpaas-system get sa          jaeger-prod-sa            -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-sa.yaml                  || true
+kubectl -n cpaas-system get secret      jaeger-prod-oauth2-proxy  -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-oauth2-proxy-secret.yaml || true
+kubectl -n cpaas-system get secret      jaeger-prod-es-basic-auth -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-es-basic-auth-secret.yaml || true
+kubectl -n cpaas-system get configmap   jaeger-prod-oauth2-proxy  -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-oauth2-proxy-configmap.yaml || true
 ```
 
 :::note
