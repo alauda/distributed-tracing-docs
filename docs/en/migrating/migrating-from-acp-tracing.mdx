@@ -62,7 +62,7 @@ The legacy Jaeger query path remains available throughout the migration, so prev
 
 ### Trace data continuity strategy \{#trace-data-continuity-strategy}
 
-By following the <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#alauda-container-platform-tracing-integration" children="Alauda Container Platform Tracing integration" /> guidance during the OpenTelemetry v2 migration, the v2 OpenTelemetry Collector is deployed in the same namespace and with the same Service name (`otel-collector` in `cpaas-system`) as the legacy Collector. Applications that export OTLP to `otel-collector.cpaas-system` keep working without any configuration change.
+By following the <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#recreate-the-opentelemetrycollector-resources" children="Recreate the OpenTelemetryCollector resources" /> guidance during the OpenTelemetry v2 migration, the v2 OpenTelemetry Collector is deployed in the same namespace and with the same Service name (`otel-collector` in `cpaas-system`) as the legacy Collector. Applications that export OTLP to `otel-collector.cpaas-system` keep working without any configuration change.
 
 After the Jaeger cutover, trace data is partitioned cleanly by time:
 
@@ -99,8 +99,6 @@ Before migrating the Jaeger backend, complete the migration from `Alauda Build o
 - Installing the v2 Operator.
 - Preparing a Java auto-instrumentation image and recreating `OpenTelemetryCollector` and `Instrumentation` resources, including setting the now-required `spec.java.image` field.
 - Rolling out application pods so that the new Java agent is injected.
-
-When you complete the OpenTelemetry migration, follow the <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#alauda-container-platform-tracing-integration" children="Alauda Container Platform Tracing integration" /> guidance so that the v2 OpenTelemetry Collector keeps the legacy namespace (`cpaas-system`), Service name (`otel-collector`), and ports (`4317`/`4318`). Workloads that exported to `otel-collector.cpaas-system:4317` then keep working without any configuration change throughout this migration.
 
 At the end of this stage:
 
@@ -468,7 +466,7 @@ For rollback of the OpenTelemetry v1 → v2 stage, see <ExternalSiteLink name="o
 
 **Do applications need to update their OTLP endpoints?**
 
-No. By following the <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#alauda-container-platform-tracing-integration" children="Alauda Container Platform Tracing integration" /> guidance in the OpenTelemetry v2 migration guide, the v2 OpenTelemetry Collector is deployed in the same namespace (`cpaas-system`), with the same Service name (`otel-collector`) and the same ports (`4317`/`4318`). Workloads that exported to `otel-collector.cpaas-system:4317` keep working without any change.
+No. By following the <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#recreate-the-opentelemetrycollector-resources" children="Recreate the OpenTelemetryCollector resources" /> guidance in the OpenTelemetry v2 migration guide, the v2 OpenTelemetry Collector is deployed in the same namespace (`cpaas-system`), with the same Service name (`otel-collector`) and the same ports (`4317`/`4318`). Workloads that exported to `otel-collector.cpaas-system:4317` keep working without any change.
 
 **Will the new Jaeger UI show traces from before the cutover?**
 
