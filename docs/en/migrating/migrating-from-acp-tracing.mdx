@@ -1,0 +1,499 @@
+---
+weight: 10
+---
+
+# Migrating from Alauda Container Platform Tracing
+
+This document describes how to migrate an existing tracing deployment based on the legacy **Alauda Container Platform (ACP) Tracing** stack — `Alauda Build of Jaeger` (Jaeger 1.60.0) plus `Alauda Build of OpenTelemetry` — to **Alauda Distributed Tracing** based on `Jaeger v2` (2.16.0) plus `Alauda Build of OpenTelemetry v2`.
+
+The migration is performed in two stages:
+
+1. **OpenTelemetry stack migration.** Replace the legacy `Alauda Build of OpenTelemetry` Operator and Collector with `Alauda Build of OpenTelemetry v2`. Application pods are rolled out so that the v2 Java agent is injected. After this stage, telemetry is collected by the v2 Collector but still written to the legacy Jaeger backend. This stage is performed by following <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html" children="Migrating from Alauda Build of OpenTelemetry to Alauda Build of OpenTelemetry v2" />.
+
+2. **Jaeger backend migration.** Deploy a new `Jaeger v2` instance alongside the legacy Jaeger, switch the v2 Collector's trace exporter to the new backend, and uninstall the legacy Jaeger after the legacy retention period has elapsed.
+
+After the cutover, new trace data flows into the new Jaeger v2 backend while the legacy Jaeger keeps serving previously stored traces. Once the legacy retention period elapses (default 7 days), the legacy stack is uninstalled.
+
+## Overview
+
+### What changes between ACP Tracing and Alauda Distributed Tracing
+
+| Item | Alauda Container Platform Tracing (legacy) | Alauda Distributed Tracing (target) |
+| :--- | :--- | :--- |
+| Jaeger version | 1.60.0 | 2.16.0 |
+| Jaeger Operator | `Alauda Build of Jaeger` Operator (CRD: `jaegertracing.io/v1.Jaeger`) | `Alauda Build of OpenTelemetry v2` Operator (Jaeger v2 is deployed as an `opentelemetry.io/v1beta1.OpenTelemetryCollector`) |
+| Default Elasticsearch index prefix | `acp-tracing-<cluster>` (date-stamped daily indices) | `acp-<cluster>` (rollover write/read aliases) |
+| Elasticsearch retention | `jaeger-es-index-cleaner` CronJob deletes daily indices older than `numberOfDays` (default `7`) | Index Lifecycle Management (ILM) policy `jaeger-ilm-policy` rolls and deletes indices automatically (default delete after `7d`) |
+| Tracing UI entry point | The platform-customized **Observability → Tracing** view, gated by the `acp-tracing-ui` feature switch | The native Jaeger UI exposed through an Ingress with the OAuth2 Proxy sidecar |
+
+For changes to the OpenTelemetry Operator, Collector, and `Instrumentation` resources (including the now-required `spec.java.image` field, Service Mesh v1 incompatibility, and Collector configuration schema migration), see <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#what-changes-between-v1-and-v2" children="What changes between v1 and v2" /> in the OpenTelemetry v2 migration guide.
+
+:::note
+The legacy `Alauda Build of Jaeger` Operator owns a separate CRD (`jaegertracing.io/v1.Jaeger`) and does **not** conflict with the v2 OpenTelemetry Operator. It is therefore kept running during the migration so that the legacy Jaeger continues to serve historical trace data.
+:::
+
+### Migration outage windows
+
+Trace ingestion is interrupted in two places:
+
+1. **During the OpenTelemetry v1 → v2 migration**, between the time the legacy `OpenTelemetryCollector` is deleted and the time the v2 `OpenTelemetryCollector` becomes ready. See <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#migration-outage-window" children="Migration outage window" /> in the OpenTelemetry v2 migration guide.
+
+2. **During the Jaeger cutover**, when the v2 Collector is patched to redirect its trace exporter from the legacy Jaeger to the new Jaeger v2 backend. The Collector deployment is rolled, so a short ingestion gap may occur during the rollout.
+
+Application pods continue to run normally throughout both windows, but telemetry generated during the gaps may be temporarily buffered and can be dropped if it cannot be exported in time. Plan each stage during a low-traffic window and notify telemetry consumers (developers, SRE, Kiali users) in advance.
+
+The legacy Jaeger query path remains available throughout the migration, so previously stored traces can still be searched in the legacy Jaeger UI while the new pipeline is being brought up.
+
+### Migration flow at a glance
+
+```
+[Stage 1] Migrate Alauda Build of OpenTelemetry to v2 (per external guide)
+              ↓ v2 Collector keeps writing traces to the legacy Jaeger
+[Step 1]  Deploy the new Jaeger v2 instance (jaeger-system)
+[Step 2]  Switch the v2 OpenTelemetry Collector to write to the new Jaeger
+              ↓ trace ingestion cutover; new traces go to the new Jaeger
+[Step 3]  Verify the migration
+              ↓
+[Observation] ≤ 7 days — legacy Jaeger remains queryable for historical traces
+              ↓
+[Step 4]  Uninstall the legacy Jaeger instance and Operator
+[Step 5]  Disable the legacy feature switch and clean up legacy ES indices
+```
+
+### Trace data continuity strategy \{#trace-data-continuity-strategy}
+
+By following the <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#recreate-the-opentelemetrycollector-resources" children="Recreate the OpenTelemetryCollector resources" /> guidance during the OpenTelemetry v2 migration, the v2 OpenTelemetry Collector is deployed in the same namespace and with the same Service name (`otel-collector` in `cpaas-system`) as the legacy Collector. Applications that export OTLP to `otel-collector.cpaas-system` keep working without any configuration change.
+
+After the Jaeger cutover, trace data is partitioned cleanly by time:
+
+- **Traces ingested before the cutover** remain only in the legacy Jaeger. They are queryable through the legacy Jaeger UI at `<platform-url>/clusters/<cluster>/acp/jaeger` for as long as the legacy `jaeger-es-index-cleaner` retains them — by default 7 days from the index creation date.
+- **Traces ingested after the cutover** are written only to the new Jaeger v2 backend. They are queryable through the new Jaeger UI at `<platform-url>/clusters/<cluster>/jaeger`.
+
+The legacy Jaeger instance and its Operator are intentionally **kept running** during the observation period so that users can continue to search recent historical traces via the legacy UI. After the legacy retention has fully aged out (≥ 7 days), the legacy stack is uninstalled in [Cleanup](#cleanup).
+
+:::note
+Communicate the split to your users in advance: **the new Jaeger UI does not contain pre-cutover traces.** During the observation period, users searching for a trace that started before the cutover should fall back to the legacy Jaeger UI.
+:::
+
+:::tip
+Some teams prefer to dual-export every span to both the new Jaeger and the legacy Jaeger during the observation period, so that post-cutover traces appear in *both* UIs. This is useful for parallel validation, gradual UI switchover across teams, or a faster in-place rollback path. It approximately doubles the Elasticsearch write load and storage during the observation period and adds an extra cleanup step. See [(Optional) Enabling dual export to the legacy Jaeger](#optional-enabling-dual-export-to-the-legacy-jaeger).
+
+Dual export does **not** backfill pre-cutover traces into the new Jaeger; pre-cutover traces are only ever queryable through the legacy Jaeger UI.
+:::
+
+## Prerequisites
+
+- An active ACP CLI (`kubectl`) session by a cluster administrator with the `cluster-admin` role.
+- The legacy ACP Tracing stack (`Alauda Build of Jaeger` Operator with a `Jaeger` instance, plus `Alauda Build of OpenTelemetry` with an `OpenTelemetryCollector` and one or more `Instrumentation` resources) is currently installed.
+- Elasticsearch 8.x is reachable from the cluster, and you have an Elasticsearch user with permission to create ILM policies, index templates, and index aliases.
+- The `jq` and `envsubst` command-line tools are installed on the workstation that runs the migration commands.
+- Telemetry consumers (developers, Kiali users, SRE dashboards) and application owners are notified of the planned outage windows.
+
+## Pre-migration tasks
+
+### Migrate Alauda Build of OpenTelemetry to v2 \{#migrate-alauda-build-of-opentelemetry-to-v2}
+
+Before migrating the Jaeger backend, complete the migration from `Alauda Build of OpenTelemetry` to `Alauda Build of OpenTelemetry v2` by following <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html" children="Migrating from Alauda Build of OpenTelemetry to Alauda Build of OpenTelemetry v2" />. That guide covers:
+
+- Backing up and uninstalling the legacy `Alauda Build of OpenTelemetry` Operator and its `OpenTelemetryCollector` and `Instrumentation` resources.
+- Installing the v2 Operator.
+- Preparing a Java auto-instrumentation image and recreating `OpenTelemetryCollector` and `Instrumentation` resources, including setting the now-required `spec.java.image` field.
+- Rolling out application pods so that the new Java agent is injected.
+
+At the end of this stage:
+
+- The v2 `Alauda Build of OpenTelemetry` Operator is installed and the legacy Operator is uninstalled.
+- The v2 `OpenTelemetryCollector` in `cpaas-system` is running with its trace exporter still pointing at the legacy Jaeger (the natural outcome of recreating the Collector from the v1 backup).
+- All `Instrumentation` resources have `spec.java.image` set, and application pods have been rolled out with the v2 Java agent.
+
+Trace ingestion continues to flow into the legacy Jaeger until [Switch the v2 OpenTelemetry Collector to the new Jaeger](#switch-the-v2-opentelemetry-collector-to-the-new-jaeger) in this guide.
+
+### Inventory the legacy Jaeger deployment
+
+Capture the current state of the legacy Jaeger so that you understand the migration scope and can produce backups for rollback.
+
+1. List the legacy `Alauda Build of Jaeger` Operator and `Jaeger` instances:
+
+    ```bash {name=migrate-acp-tracing:inventory-jaeger}
+    kubectl get csv -A | grep -i jaeger
+    kubectl get jaeger -A
+    ```
+
+2. Record the legacy Elasticsearch endpoint, credentials, and index prefix referenced by the legacy `Jaeger` resource. They will also be reused by the new Jaeger v2 instance.
+
+### Back up the legacy Jaeger resources \{#back-up-the-legacy-resources}
+
+Export the legacy Jaeger resources so that you can rebuild them (and roll back if needed):
+
+```bash {name=migrate-acp-tracing:backup}
+mkdir -p ./acp-tracing-backup
+
+# Jaeger CR (covers the jaeger-prod instance in cpaas-system).
+kubectl get jaeger -A -o yaml \
+  > ./acp-tracing-backup/jaegers.yaml
+
+# Alauda Build of Jaeger Operator Subscription and CSV.
+kubectl get subscription -n jaeger-operator jaeger-operator -o yaml \
+  > ./acp-tracing-backup/jaeger-v1-subscription.yaml || true
+kubectl -n jaeger-operator get csv -o yaml \
+  > ./acp-tracing-backup/jaeger-v1-csv.yaml || true
+
+# Supporting resources for jaeger-prod in cpaas-system. Each is removed in
+# Cleanup, so back them up here so rollback can restore them. Skip silently
+# (|| true) if a resource is not present in this environment.
+kubectl -n cpaas-system get ingress     jaeger-prod-query         -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-ingress.yaml             || true
+kubectl -n cpaas-system get podmonitor  jaeger-prod-monitor       -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-podmonitor.yaml          || true
+kubectl -n cpaas-system get rolebinding jaeger-prod-rb            -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-rolebinding.yaml         || true
+kubectl -n cpaas-system get role        jaeger-prod-role          -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-role.yaml                || true
+kubectl -n cpaas-system get sa          jaeger-prod-sa            -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-sa.yaml                  || true
+kubectl -n cpaas-system get secret      jaeger-prod-oauth2-proxy  -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-oauth2-proxy-secret.yaml || true
+kubectl -n cpaas-system get secret      jaeger-prod-es-basic-auth -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-es-basic-auth-secret.yaml || true
+kubectl -n cpaas-system get configmap   jaeger-prod-oauth2-proxy  -o yaml \
+  > ./acp-tracing-backup/jaeger-prod-oauth2-proxy-configmap.yaml || true
+```
+
+:::note
+The backup files are only used as configuration references and rollback artifacts. When you rebuild Jaeger on v2, follow the v2 conventions described in [Installing Alauda Distributed Tracing](../installing/installing-distributed-tracing.mdx).
+:::
+
+### Verify Elasticsearch capacity
+
+The new Jaeger writes to a separate index family (`acp-<cluster>-jaeger-*`) while the legacy indices (`acp-tracing-<cluster>-jaeger-*`) age out over the legacy retention period. Plan for one extra full retention's worth of trace storage in Elasticsearch. If you opt into [(Optional) Enabling dual export to the legacy Jaeger](#optional-enabling-dual-export-to-the-legacy-jaeger), plan for approximately twice the steady-state storage during the observation period.
+
+## Migration procedure
+
+<Steps>
+
+### Deploy the new Jaeger v2 instance \{#deploy-the-new-jaeger-v2-instance}
+
+Follow [Installing Alauda Build of Jaeger v2](../installing/installing-distributed-tracing.mdx#installing-alauda-build-of-jaeger-v2) in the Alauda Distributed Tracing installation guide. The new Jaeger v2 instance is deployed in a dedicated namespace (`jaeger-system` by default) so that it does not collide with the legacy `jaeger-prod` instance in `cpaas-system`.
+
+:::warning
+Only follow the *Installing Alauda Build of Jaeger v2* section linked above. **Do not** execute the *Deploying the OpenTelemetry Collector* section of the same installation guide — the application-facing v2 OpenTelemetry Collector was already deployed in `cpaas-system` during [Stage 1 (OpenTelemetry v2 migration)](#migrate-alauda-build-of-opentelemetry-to-v2). Running that section would create a duplicate `otel` Collector in `jaeger-system` that no application talks to.
+:::
+
+When you reach the variable-setup step, keep the **default index prefix** so that the new Jaeger writes to indices that are clearly separated from the legacy ones:
+
+```bash {name=migrate-acp-tracing:set-jaeger-vars}
+export JAEGER_NS="jaeger-system"
+export JAEGER_INSTANCE_NAME="jaeger"
+export JAEGER_ES_INDEX_PREFIX="acp-${CLUSTER_NAME}"      # different from the legacy "acp-tracing-${CLUSTER_NAME}"
+export JAEGER_BASEPATH="/clusters/${CLUSTER_NAME}/jaeger"  # different from the legacy "/clusters/${CLUSTER_NAME}/acp/jaeger"
+```
+
+After completing the installation steps, verify that:
+
+- The Jaeger Pod in `jaeger-system` is `Ready`.
+- The Jaeger UI is reachable at `<platform-url>/clusters/<cluster>/jaeger`. It is empty at this point, since no exporter is yet writing to it.
+- The Service `jaeger-collector.jaeger-system.svc.cluster.local` accepts OTLP gRPC on port `4317` — this is the endpoint that the v2 OpenTelemetry Collector will export to in the next step.
+
+### Switch the v2 OpenTelemetry Collector to the new Jaeger \{#switch-the-v2-opentelemetry-collector-to-the-new-jaeger}
+
+After the [OpenTelemetry v1 → v2 migration](#migrate-alauda-build-of-opentelemetry-to-v2), the recreated `otel` `OpenTelemetryCollector` in `cpaas-system` still writes traces to the legacy Jaeger because its trace exporter was inherited from the v1 backup. The trace-related portion of its `spec.config` typically looks like this (other fields are unrelated to this step and are omitted):
+
+```yaml title="otel collector — post-OpenTelemetry-migration state"
+spec:
+  config:
+    exporters:
+      debug: {}
+      otlp: # [!code callout]
+        balancer_name: round_robin
+        endpoint: dns:///jaeger-prod-collector-headless.cpaas-system:4317
+        tls:
+          insecure: true
+    service:
+      pipelines:
+        traces:
+          receivers:  [otlp]
+          processors: [memory_limiter, batch]
+          exporters:  [debug, otlp] # [!code callout]
+```
+
+<Callouts>
+  1. The legacy-Jaeger exporter — inherited from the v1 backup — is named `otlp` and targets the legacy Jaeger collector's headless Service in `cpaas-system`. `balancer_name: round_robin` distributes spans across the headless Service endpoints.
+  2. The trace pipeline sends spans to `debug` (logs) and `otlp` (legacy Jaeger).
+</Callouts>
+
+Patch the Collector to (1) add a new `otlp/jaeger-v2` exporter pointing at the new Jaeger v2 collector Service in `jaeger-system`, (2) remove the legacy `otlp` exporter by setting it to `null`, and (3) replace the trace pipeline's exporter list with `[debug, otlp/jaeger-v2]`:
+
+```bash {name=migrate-acp-tracing:switch-collector-exporter}
+kubectl -n cpaas-system patch opentelemetrycollector otel --type=merge -p '
+spec:
+  config:
+    exporters:
+      otlp/jaeger-v2:
+        endpoint: jaeger-collector.jaeger-system.svc.cluster.local:4317
+        tls:
+          insecure: true
+      otlp: null
+    service:
+      pipelines:
+        traces:
+          exporters: [debug, otlp/jaeger-v2]
+'
+kubectl rollout status deployment/otel-collector -n cpaas-system --timeout=180s
+```
+
+:::warning
+`service.pipelines.traces.exporters` is an array, and a merge patch replaces arrays in their entirety rather than appending. The patch above lists every exporter that must remain in the trace pipeline (`debug`, `otlp/jaeger-v2`). If your trace pipeline contains additional custom exporters, add them to this list before applying the patch.
+
+If the inherited legacy-Jaeger exporter on your Collector is not named `otlp` (for example, your v1 backup used `jaeger` or a different OTLP variant), substitute that name in the `null` removal step accordingly.
+:::
+
+:::tip
+The new exporter is named `otlp/jaeger-v2` rather than reusing the `otlp` name so that, if you later choose to also write to the legacy Jaeger during the observation period, the additional exporter can be patched back in symmetrically as `otlp/jaeger-v1`. See [(Optional) Enabling dual export to the legacy Jaeger](#optional-enabling-dual-export-to-the-legacy-jaeger).
+:::
+
+Trace ingestion is restored at this point. New traces are written to the new Jaeger v2 backend and become searchable in the new Jaeger UI.
+
+### Verify the migration \{#verify-the-migration}
+
+1. Confirm that both `OpenTelemetryCollector` resources are healthy:
+
+    ```bash {name=migrate-acp-tracing:verify-collectors}
+    kubectl get opentelemetrycollector -A
+    ```
+
+    Example output:
+
+    ```text
+    NAMESPACE       NAME     MODE         VERSION   READY   AGE   IMAGE                                                           MANAGEMENT
+    cpaas-system    otel     deployment   0.147.0   1/1     5h    build-harbor.alauda.cn/asm/opentelemetry-collector:0.147.0-r0   managed
+    jaeger-system   jaeger   deployment   0.147.0   1/1     33m   build-harbor.alauda.cn/asm/jaeger:2.16.0-r2                     managed
+    ```
+
+    Both `cpaas-system/otel` (the application-facing Collector, redeployed by the [OpenTelemetry v1 → v2 migration](#migrate-alauda-build-of-opentelemetry-to-v2)) and `jaeger-system/jaeger` (the new Jaeger v2 backend, deployed in [Deploy the new Jaeger v2 instance](#deploy-the-new-jaeger-v2-instance)) must report `READY` as `<ready>/<desired>` with `<ready>` equal to `<desired>` (typically `1/1`) and `MANAGEMENT` as `managed`. If the `READY` column shows `0/1` or is empty, inspect the Collector pod logs in the corresponding namespace before continuing.
+
+2. Generate sample traces with `telemetrygen` and verify they appear in the new Jaeger UI:
+
+    ```bash {name=migrate-acp-tracing:telemetrygen}
+    kubectl apply -n cpaas-system -f - <<EOF
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: jaeger-migration-check
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: telemetrygen
+          image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+          args:
+            - traces
+            - --otlp-endpoint=otel-collector.cpaas-system.svc.cluster.local:4317
+            - --otlp-insecure
+            - --duration=120s
+            - --service=jaeger-migration-check
+            - --rate=2
+    EOF
+
+    kubectl wait -n cpaas-system --for=jsonpath='{.status.phase}'=Succeeded \
+      pod/jaeger-migration-check --timeout=10m
+    kubectl delete -n cpaas-system pod/jaeger-migration-check
+    ```
+
+    The new Jaeger UI at `<platform-url>/clusters/<cluster>/jaeger` should list the `jaeger-migration-check` service and its traces.
+
+3. Confirm that the new index family is being created in Elasticsearch and that the legacy index family is intact:
+
+    ```bash {name=migrate-acp-tracing:verify-es-indices}
+    curl -k -sS -u "${ES_USER}:${ES_PASS}" "${ES_ENDPOINT}/_cat/indices?v" \
+      | grep -E 'acp-tracing-|acp-' | sort
+    ```
+
+    You should see legacy indices matching `acp-tracing-<cluster>-jaeger-*` (date-stamped, no longer growing) and new indices matching `acp-<cluster>-jaeger-*-000001` (rollover, growing).
+
+4. Spot-check that a real business request produces a trace in the new Jaeger UI. Pick one or two already-instrumented applications, trigger a representative request, and look up its traceID in the new Jaeger UI.
+
+</Steps>
+
+## Observation period \{#observation-period}
+
+Keep the legacy Jaeger running for **at least 7 days** after the cutover, matching the legacy `esIndexCleaner.numberOfDays` retention. During this window:
+
+- The legacy Jaeger UI continues to serve any pre-cutover traces that have not yet been deleted by the legacy `jaeger-es-index-cleaner`. The cleaner removes each index ~7 days after its creation date; once all pre-cutover indices have been cleaned, the legacy Jaeger has no useful data left and can be uninstalled.
+- The new Jaeger accumulates traces produced after the cutover. Validate dashboards, alerts, and Kiali integrations against the new Jaeger UI and the v2 Java agent metric names.
+- Communicate the split clearly: tell users that the new Jaeger UI shows traces from the cutover onwards, and that older traces remain in the legacy Jaeger UI.
+
+If pre-cutover traces have no business value, you can shorten or skip the observation period and proceed directly to [Cleanup](#cleanup); the trade-off is that any traces older than the cutover are no longer reachable as soon as the legacy stack is removed.
+
+:::warning
+Once the legacy `Jaeger` instance is deleted in [Uninstall the legacy Jaeger instance](#uninstall-the-legacy-jaeger-instance), pre-cutover traces are no longer recoverable. Confirm that nobody still relies on them before proceeding.
+:::
+
+## Cleanup \{#cleanup}
+
+<Steps>
+
+### Uninstall the legacy Jaeger instance \{#uninstall-the-legacy-jaeger-instance}
+
+:::tip
+If you opted into [(Optional) Enabling dual export to the legacy Jaeger](#optional-enabling-dual-export-to-the-legacy-jaeger), first remove the legacy exporter from the v2 Collector pipeline as described in [Stop the dual export](#stop-the-dual-export). The legacy Jaeger collector Service must still exist while the v2 Collector references it; otherwise the OTLP exporter accumulates connection errors until the Collector is patched.
+:::
+
+Delete the legacy `Jaeger` instance and its supporting resources:
+
+```bash {name=migrate-acp-tracing:delete-legacy-jaeger}
+kubectl -n cpaas-system delete ingress      jaeger-prod-query         --ignore-not-found
+kubectl -n cpaas-system delete podmonitor   jaeger-prod-monitor       --ignore-not-found
+kubectl -n cpaas-system delete jaeger       jaeger-prod               --ignore-not-found
+kubectl -n cpaas-system delete rolebinding  jaeger-prod-rb            --ignore-not-found
+kubectl -n cpaas-system delete role         jaeger-prod-role          --ignore-not-found
+kubectl -n cpaas-system delete sa           jaeger-prod-sa            --ignore-not-found
+kubectl -n cpaas-system delete secret       jaeger-prod-oauth2-proxy  --ignore-not-found
+kubectl -n cpaas-system delete secret       jaeger-prod-es-basic-auth --ignore-not-found
+kubectl -n cpaas-system delete configmap    jaeger-prod-oauth2-proxy  --ignore-not-found
+```
+
+Uninstall the `Alauda Build of Jaeger` Operator:
+
+```bash {name=migrate-acp-tracing:uninstall-jaeger-operator}
+kubectl -n jaeger-operator delete subscription jaeger-operator --ignore-not-found
+```
+
+:::tip
+The `jaegers.jaegertracing.io` CRD can also be deleted if no other `Jaeger` resources remain in the cluster:
+
+```bash
+kubectl get jaeger -A
+kubectl delete crd jaegers.jaegertracing.io
+```
+:::
+
+### Disable the legacy feature switch and clean up legacy indices \{#disable-the-legacy-feature-switch-and-clean-up-legacy-indices}
+
+1. In the ACP web console, open **Feature Switch** and disable `acp-tracing-ui`. The platform-customized **Observability → Tracing** view is no longer functional after the legacy Alauda Build of OpenTelemetry v1 Operator is uninstalled. Update internal documentation and runbooks to point to the Jaeger UI URL `<platform-url>/clusters/<cluster>/jaeger`.
+
+2. The legacy `jaeger-es-index-cleaner` CronJob was deleted together with the legacy `Jaeger` instance, so any remaining `acp-tracing-<cluster>-jaeger-*` indices in Elasticsearch are no longer auto-rotated. Delete them manually:
+
+    ```bash {name=migrate-acp-tracing:cleanup-legacy-indices}
+    # Inspect first. _cat/indices/<pattern>?v restricts the table to indices
+    # matching the legacy prefix.
+    curl -k -sS -u "${ES_USER}:${ES_PASS}" \
+      "${ES_ENDPOINT}/_cat/indices/acp-tracing-${CLUSTER_NAME}-jaeger-*?v"
+
+    # Delete after confirming. ?h=index returns just the index-name column
+    # (no table header), which the for-loop iterates over.
+    for idx in $(curl -k -sS -u "${ES_USER}:${ES_PASS}" \
+                   "${ES_ENDPOINT}/_cat/indices/acp-tracing-${CLUSTER_NAME}-jaeger-*?h=index"); do
+      curl -k -sS -u "${ES_USER}:${ES_PASS}" -X DELETE "${ES_ENDPOINT}/${idx}"
+      echo
+    done
+    ```
+
+</Steps>
+
+## (Optional) Enabling dual export to the legacy Jaeger \{#optional-enabling-dual-export-to-the-legacy-jaeger}
+
+Configuring the v2 OpenTelemetry Collector to write every span to **both** the new Jaeger and the legacy Jaeger is an opt-in alternative to the default single-export pipeline. Consider it when one of the following applies:
+
+- **Parallel validation.** You want to compare the new Jaeger against the legacy Jaeger on production traffic during the observation period before fully relying on the new backend.
+- **Faster in-place rollback.** If the new Jaeger turns out to have problems during the observation period, you can drop `otlp/jaeger-v2` from the trace pipeline with a single patch and the legacy Jaeger keeps receiving traces uninterrupted.
+- **Gradual UI switchover.** Different teams plan to switch from the legacy UI to the new UI on independent schedules and you want both UIs to show post-cutover data during the transition.
+
+Trade-offs:
+
+- Elasticsearch write load and storage usage roughly **double** during the observation period because every span is indexed in both index families.
+- The trace pipeline must be reverted by an extra patch in [Stop the dual export](#stop-the-dual-export) before the legacy Jaeger is uninstalled.
+- Two export pipelines must be monitored for failures (`otelcol_exporter_send_failed_spans_total` for both `otlp/jaeger-v2` and `otlp/jaeger-v1`).
+
+Dual export does **not** backfill pre-cutover traces into the new Jaeger; pre-cutover traces are only ever queryable through the legacy Jaeger UI.
+
+### Enable dual export \{#enable-dual-export}
+
+After [Switch the v2 OpenTelemetry Collector to the new Jaeger](#switch-the-v2-opentelemetry-collector-to-the-new-jaeger) has converged, the `otel` Collector has `otlp/jaeger-v2` as the only trace exporter writing to a Jaeger backend (the trace pipeline is `[debug, otlp/jaeger-v2]`). Patch the Collector to add the legacy Jaeger back as a second exporter `otlp/jaeger-v1`, mirroring the legacy-Jaeger endpoint, headless-Service load balancing, and TLS settings of the original `otlp` exporter that was removed in the switch step:
+
+```bash {name=migrate-acp-tracing:enable-dual-export}
+kubectl -n cpaas-system patch opentelemetrycollector otel --type=merge -p '
+spec:
+  config:
+    exporters:
+      otlp/jaeger-v1:
+        endpoint: dns:///jaeger-prod-collector-headless.cpaas-system:4317
+        balancer_name: round_robin
+        tls:
+          insecure: true
+    service:
+      pipelines:
+        traces:
+          exporters: [debug, otlp/jaeger-v2, otlp/jaeger-v1]
+'
+kubectl rollout status deployment/otel-collector -n cpaas-system --timeout=180s
+```
+
+:::warning
+`service.pipelines.traces.exporters` is an array, and a merge patch replaces arrays in their entirety rather than appending. The patch above lists every exporter that must remain in the trace pipeline (`debug`, `otlp/jaeger-v2`, `otlp/jaeger-v1`). If your trace pipeline contains additional custom exporters, add them to this list before applying the patch.
+:::
+
+After the patch is applied, every span is written to both Jaeger backends.
+
+### Stop the dual export \{#stop-the-dual-export}
+
+After the observation period, before [Uninstall the legacy Jaeger instance](#uninstall-the-legacy-jaeger-instance), remove the legacy exporter from the trace pipeline:
+
+```bash {name=migrate-acp-tracing:stop-dual-export}
+kubectl -n cpaas-system patch opentelemetrycollector otel --type=merge -p '
+spec:
+  config:
+    exporters:
+      otlp/jaeger-v1: null
+    service:
+      pipelines:
+        traces:
+          exporters: [debug, otlp/jaeger-v2]
+'
+kubectl rollout status deployment/otel-collector -n cpaas-system --timeout=180s
+```
+
+After this patch, the v2 Collector writes traces only to the new Jaeger. You can now proceed with [Uninstall the legacy Jaeger instance](#uninstall-the-legacy-jaeger-instance).
+
+## Rollback \{#rollback}
+
+For rollback of the OpenTelemetry v1 → v2 stage, see <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#rollback" children="Rollback" /> in the OpenTelemetry v2 migration guide. For the Jaeger migration stage performed in this document, choose the rollback path that matches the phase you are in:
+
+| Phase reached | Recommended rollback |
+| :--- | :--- |
+| Before [Deploy the new Jaeger v2 instance](#deploy-the-new-jaeger-v2-instance) | No action required for the Jaeger stage — the legacy Jaeger is still receiving traces and the new Jaeger is not deployed. |
+| After [Deploy the new Jaeger v2 instance](#deploy-the-new-jaeger-v2-instance) but before [Switch the v2 OpenTelemetry Collector to the new Jaeger](#switch-the-v2-opentelemetry-collector-to-the-new-jaeger) | Delete the new Jaeger instance (`kubectl -n jaeger-system delete opentelemetrycollector jaeger`). The legacy Jaeger remains intact and continues to receive traces. |
+| New Jaeger has problems during the observation period (default single export) | Patch the v2 Collector to point its trace pipeline back at the legacy Jaeger collector (replace `otlp/jaeger-v2` with an exporter targeting `jaeger-prod-collector-headless.cpaas-system:4317`). The legacy Jaeger receives traces again immediately. The fastest pre-built path is to switch to dual export first via [Enable dual export](#enable-dual-export); if that path was already in use, simply patch out `otlp/jaeger-v2`. |
+| New Jaeger has problems during the observation period (dual export enabled) | Patch the v2 Collector to drop `otlp/jaeger-v2` from the trace pipeline. The legacy Jaeger continues to receive traces while you investigate. |
+| Legacy Jaeger has problems during the observation period (dual export enabled) | Patch the v2 Collector to drop `otlp/jaeger-v1` from the trace pipeline. This is equivalent to ending dual export early; pre-cutover traces older than the legacy retention will not be reachable in the new Jaeger. |
+| After the observation period — full rollback to the legacy stack | First, point the v2 Collector trace pipeline back at the legacy Jaeger. Then follow <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#rollback" children="Rollback" /> in the OpenTelemetry v2 migration guide and roll out the application Pods again so that the legacy Java agent is re-injected. The new Jaeger v2 instance and the OpenTelemetry v2 Operator must be uninstalled before the legacy Operator is reinstalled. |
+
+## FAQ \{#faq}
+
+**Do applications need to update their OTLP endpoints?**
+
+No. By following the <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#recreate-the-opentelemetrycollector-resources" children="Recreate the OpenTelemetryCollector resources" /> guidance in the OpenTelemetry v2 migration guide, the v2 OpenTelemetry Collector is deployed in the same namespace (`cpaas-system`), with the same Service name (`otel-collector`) and the same ports (`4317`/`4318`). Workloads that exported to `otel-collector.cpaas-system:4317` keep working without any change.
+
+**Will the new Jaeger UI show traces from before the cutover?**
+
+No. Pre-cutover traces are stored only in the legacy Jaeger and remain queryable through the legacy Jaeger UI for the duration of the legacy retention window (default 7 days). The new Jaeger UI starts showing traces from the cutover onwards. Communicate this to users in advance, and direct them to the legacy UI for older traces during the observation period.
+
+**When should I enable dual export?**
+
+The default single-export path is sufficient for most migrations. Enable dual export ([(Optional) Enabling dual export to the legacy Jaeger](#optional-enabling-dual-export-to-the-legacy-jaeger)) only when one of the following applies:
+
+- You need to validate the new Jaeger against the legacy Jaeger using production traffic before relying on it.
+- Different teams will switch from the legacy UI to the new UI on independent schedules and you want both UIs to show post-cutover data during the transition.
+- You want the fastest possible in-place rollback path during the observation period.
+
+Be aware that dual export approximately doubles the Elasticsearch write load and storage during the observation period, and adds an extra patch step before the legacy Jaeger is uninstalled.
+
+**Can the legacy and the new Jaeger share the same Elasticsearch index?**
+
+No. The legacy Jaeger uses date-stamped daily indices (`acp-tracing-<cluster>-jaeger-span-YYYY-MM-DD`), while Jaeger v2 uses rollover aliases (`acp-<cluster>-jaeger-span-write` / `-read` backed by `*-000001`, `*-000002`, …). The schemas and lifecycle are managed differently, so the two index families must remain separate. Keep the default prefixes shown in [Deploy the new Jaeger v2 instance](#deploy-the-new-jaeger-v2-instance) to avoid collisions.
+
+**How much extra Elasticsearch storage is required during the observation period?**
+
+With the default single-export path, the new index family grows from zero while the legacy index family ages out over the legacy retention; plan for one extra full retention's worth of trace storage as a steady-state buffer. With dual export enabled, plan for approximately twice the steady-state size of the legacy index family for the duration of the observation period, plus headroom for retries and ingestion bursts.
+
+**Can Service Performance Monitoring (SPM) be enabled as part of the migration?**
+
+SPM is optional and can be enabled at any time after [Verify the migration](#verify-the-migration). Follow [(Optional) Enabling Service Performance Monitoring (SPM)](../installing/installing-distributed-tracing.mdx#optional-enabling-service-performance-monitoring-spm) to add the `spanmetrics` connector to the v2 OpenTelemetry Collector and configure a metrics backend in the new Jaeger.

@@ -22,7 +22,7 @@ Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/ins
 
 Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/installing/install-opentelemetry.html#installing-via-the-cli" children="Installing via the CLI" /> section of the Alauda Build of OpenTelemetry v2 documentation.
 
-## Installing Alauda Build of Jaeger v2
+## Installing Alauda Build of Jaeger v2 \{#installing-alauda-build-of-jaeger-v2}
 
 Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by the Alauda Build of OpenTelemetry v2 Operator. It uses Elasticsearch as its backend storage and integrates with the Alauda Container Platform authentication system through an OAuth2 Proxy sidecar.
 
@@ -487,7 +487,7 @@ Run the following command to print the Jaeger UI URL:
 echo "Jaeger UI: ${PLATFORM_URL}${JAEGER_BASEPATH}"
 ```
 
-## Deploying the OpenTelemetry Collector
+## Deploying the OpenTelemetry Collector \{#deploying-the-opentelemetry-collector}
 
 After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receive trace data from instrumented applications and forward it to Jaeger.
 
@@ -629,7 +629,7 @@ After installing all components, verify the end-to-end tracing pipeline by gener
     echo "Jaeger UI: ${PLATFORM_URL}${JAEGER_BASEPATH}"
     ```
 
-## (Optional) Enabling Service Performance Monitoring (SPM)
+## (Optional) Enabling Service Performance Monitoring (SPM) \{#optional-enabling-service-performance-monitoring-spm}
 
 Service Performance Monitoring (SPM) surfaces in the Jaeger UI as the **Monitor** tab, aggregating span data to produce RED (Request, Error, Duration) metrics. This enables you to identify performance issues without requiring prior knowledge of service or operation names. For more details, see [Service Performance Monitoring (SPM)](../configuration/spm.mdx).
 
@@ -774,3 +774,7 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
 After enabling SPM, you can verify it by deploying the `telemetrygen` test client as described in the [Verification](#verification) section above. 
 
 Once traces are generated, navigate to the **Monitor** tab in the Jaeger UI to view the aggregated RED metrics for the `telemetrygen` service.
+
+## Uninstalling
+
+To remove the Alauda Distributed Tracing components from your cluster, follow [Uninstalling Alauda Distributed Tracing](../uninstalling/uninstalling-distributed-tracing.mdx).
