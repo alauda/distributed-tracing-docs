@@ -368,9 +368,7 @@ kubectl delete crd jaegers.jaegertracing.io
 
 1. In the ACP web console, open **Feature Switch** and disable `acp-tracing-ui`. The platform-customized **Observability → Tracing** view is no longer functional after the legacy Alauda Build of OpenTelemetry v1 Operator is uninstalled. Update internal documentation and runbooks to point to the Jaeger UI URL `<platform-url>/clusters/<cluster>/jaeger`.
 
-2. The legacy `jaeger-es-index-cleaner` CronJob was deleted together with the legacy `Jaeger` instance, so any remaining `acp-tracing-<cluster>-jaeger-*` indices in Elasticsearch are no longer auto-rotated. Delete them manually.
-
-    Elasticsearch defaults to `action.destructive_requires_name: true`, which rejects DELETE requests that target wildcards or `_all` with `Wildcard expressions or all indices are not allowed` (HTTP 400). The script below works around that by listing the matching indices first and then deleting each one by its explicit name.
+2. The legacy `jaeger-es-index-cleaner` CronJob was deleted together with the legacy `Jaeger` instance, so any remaining `acp-tracing-<cluster>-jaeger-*` indices in Elasticsearch are no longer auto-rotated. Delete them manually:
 
     ```bash {name=migrate-acp-tracing:cleanup-legacy-indices}
     # Inspect first. _cat/indices/<pattern>?v restricts the table to indices
