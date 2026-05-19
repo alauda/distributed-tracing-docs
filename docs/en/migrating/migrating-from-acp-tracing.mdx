@@ -17,12 +17,11 @@ The migration is performed in place. After the cutover, new trace data flows int
 | Jaeger version | 1.60.0 | 2.16.0 |
 | Jaeger Operator | `Alauda build of Jaeger` Operator (CRD: `jaegertracing.io/v1.Jaeger`) | `Alauda Build of OpenTelemetry v2` Operator (Jaeger v2 is deployed as an `opentelemetry.io/v1beta1.OpenTelemetryCollector`) |
 | OpenTelemetry Operator | `Alauda Build of OpenTelemetry` (`opentelemetry-operator`, upstream `0.108.0`) | `Alauda Build of OpenTelemetry v2` (`opentelemetry-operator2`, upstream `0.147.0`) |
-| Default Collector namespace | `cpaas-system` (same as Operator allowed) | `cpaas-system` recommended for ACP integration; **must** be different from the Operator namespace (`opentelemetry-operator2`) |
+| Default Collector namespace | `cpaas-system` (same as Operator allowed) | `jaeger-system` recommended for ACP integration; **must** be different from the Operator namespace (`opentelemetry-operator2`) |
 | Java auto-instrumentation image | Bundled by the Operator. `Instrumentation.spec.java.image` may be omitted. | Not bundled. `Instrumentation.spec.java.image` must be configured explicitly. |
 | Default Elasticsearch index prefix | `acp-tracing-<cluster>` (date-stamped daily indices) | `acp-<cluster>` (rollover write/read aliases) |
 | Elasticsearch retention | `jaeger-es-index-cleaner` CronJob deletes daily indices older than `numberOfDays` (default `7`) | Index Lifecycle Management (ILM) policy `jaeger-ilm-policy` rolls and deletes indices automatically (default delete after `7d`) |
 | Tracing UI entry point | The platform-customized **Observability → Tracing** view, gated by the `acp-tracing-ui` feature switch | The native Jaeger UI exposed through an Ingress with the OAuth2 Proxy sidecar |
-| Service Mesh compatibility | Compatible with Alauda Service Mesh v1 | **Not** compatible with Alauda Service Mesh v1; only with Alauda Service Mesh v2 |
 
 :::warning
 The v1 OpenTelemetry Operator (`opentelemetry-operator`) and the v2 OpenTelemetry Operator (`opentelemetry-operator2`) own the same CRDs (`OpenTelemetryCollector` and `Instrumentation`). OLM does not allow two Operators to own the same CRDs simultaneously. The legacy OpenTelemetry Operator must be fully uninstalled before the v2 Operator is installed; this part of the migration is identical to <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html" children="Migrating from Alauda Build of OpenTelemetry to Alauda Build of OpenTelemetry v2" />.
@@ -32,7 +31,7 @@ The legacy `Alauda build of Jaeger` Operator owns a separate CRD (`jaegertracing
 
 ### Migration outage window
 
-Trace ingestion is interrupted between the time the legacy `OpenTelemetryCollector` is deleted and the time the v2 `OpenTelemetryCollector` becomes ready. Application Pods are not restarted during this window — the OpenTelemetry SDKs buffer and eventually drop telemetry that cannot be exported. Plan the migration during a low-traffic window and notify telemetry consumers (developers, SRE, Kiali users) in advance.
+Trace ingestion is interrupted between the time the legacy `OpenTelemetryCollector` is deleted and the time the v2 `OpenTelemetryCollector` becomes ready. Application pods continue to run normally, but telemetry generated during the gap may be temporarily buffered and can be dropped if it cannot be exported in time. Plan the migration during a low-traffic window and notify telemetry consumers (developers, SRE, Kiali users) in advance.
 
 The legacy Jaeger query path remains available throughout the migration, so previously stored traces can still be searched in the legacy Jaeger UI while the new pipeline is being brought up.
 
@@ -49,7 +48,7 @@ The legacy Jaeger query path remains available throughout the migration, so prev
 [Step 6] Roll out application Pods
 [Step 7] Verify the migration
               ↓
-[Observation] ≥ 7 days — legacy Jaeger remains queryable for historical traces
+[Observation] ≤ 7 days — legacy Jaeger remains queryable for historical traces
               ↓
 [Step 8]  Uninstall the legacy Jaeger instance and Operator
 [Step 9]  Disable the legacy feature switch and clean up legacy ES indices
@@ -57,7 +56,7 @@ The legacy Jaeger query path remains available throughout the migration, so prev
 
 ### Trace data continuity strategy \{#trace-data-continuity-strategy}
 
-The new v2 OpenTelemetry Collector is created in the same namespace and with the same Service name (`otel-collector` in `cpaas-system`) as the legacy Collector, so applications that export OTLP to `otel-collector.cpaas-system:4317` keep working without any configuration change.
+The new v2 OpenTelemetry Collector is created in the same namespace and with the same Service name (`otel-collector` in `cpaas-system`) as the legacy Collector, so applications that export OTLP to `otel-collector.cpaas-system` keep working without any configuration change.
 
 After the cutover, trace data is partitioned cleanly by time:
 
@@ -81,7 +80,6 @@ Dual export does **not** backfill pre-cutover traces into the new Jaeger; pre-cu
 - An active ACP CLI (`kubectl`) session by a cluster administrator with the `cluster-admin` role.
 - The legacy ACP Tracing stack (`Alauda build of Jaeger` Operator with a `Jaeger` instance, plus `Alauda Build of OpenTelemetry` with an `OpenTelemetryCollector` and one or more `Instrumentation` resources) is currently installed.
 - Elasticsearch 8.x is reachable from the cluster, and you have an Elasticsearch user with permission to create ILM policies, index templates, and index aliases.
-- Alauda Service Mesh v1 is **not** installed in the cluster, or has already been migrated to Alauda Service Mesh v2. See <ExternalSiteLink name="servicemesh" href="/integration/observability/distributed-tracing-and-mesh.html" children="Distributed Tracing and Service Mesh" /> in the Alauda Service Mesh documentation.
 - A Java auto-instrumentation image is available in a registry reachable from the cluster. See <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#preparing-the-java-agent-image" children="Preparing the Java agent image" />.
 - The `jq` and `envsubst` command-line tools are installed on the workstation that runs the migration commands.
 - Telemetry consumers (developers, Kiali users, SRE dashboards) and application owners are notified of the planned outage window.
