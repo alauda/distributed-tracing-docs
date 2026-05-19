@@ -102,10 +102,6 @@ Before migrating the Jaeger backend, complete the migration from `Alauda Build o
 
 When you complete the OpenTelemetry migration, follow the <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#alauda-container-platform-tracing-integration" children="Alauda Container Platform Tracing integration" /> guidance so that the v2 OpenTelemetry Collector keeps the legacy namespace (`cpaas-system`), Service name (`otel-collector`), and ports (`4317`/`4318`). Workloads that exported to `otel-collector.cpaas-system:4317` then keep working without any configuration change throughout this migration.
 
-:::warning
-If `Alauda Service Mesh v1` is installed in the cluster, migrate it to `Alauda Service Mesh v2` before completing the OpenTelemetry v2 migration. The v2 OpenTelemetry Operator is incompatible with Service Mesh v1.
-:::
-
 At the end of this stage:
 
 - The v2 `Alauda Build of OpenTelemetry` Operator is installed and the legacy Operator is uninstalled.
