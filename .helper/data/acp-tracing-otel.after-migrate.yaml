@@ -1,0 +1,166 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  annotations:
+    cpaas.io/creator: kubernetes-admin
+    cpaas.io/display-name: ""
+    cpaas.io/operator: admin
+    cpaas.io/updated-at: 2026-05-19T05:02:37Z
+  creationTimestamp: 2026-05-19T03:55:18Z
+  generation: 2
+  labels:
+    prometheus: kube-prometheus
+  name: otel
+  namespace: cpaas-system
+  resourceVersion: "7615409"
+  uid: 4a13fb97-8f26-4674-96f8-695f66e7f7b5
+spec:
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: otel-collector
+          topologyKey: kubernetes.io/hostname
+  args: {}
+  config:
+    exporters:
+      debug: {}
+      otlp:
+        balancer_name: round_robin
+        endpoint: dns:///jaeger-prod-collector-headless.cpaas-system:4317
+        tls:
+          insecure: true
+      prometheus:
+        endpoint: 0.0.0.0:8889
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+        path: /
+    processors:
+      batch: {}
+      filter/metric_apis:
+        metrics:
+          datapoint:
+            - attributes["http.route"] == "/actuator/health" or
+              attributes["uri"] == "/actuator/health"
+            - attributes["http.route"] == "/actuator/prometheus" or
+              attributes["uri"] == "/actuator/prometheus"
+      memory_limiter:
+        check_interval: 5s
+        limit_percentage: 85
+        spike_limit_percentage: 25
+      transform:
+        metric_statements:
+          - context: datapoint
+            statements:
+              - delete_key(attributes, "inner.client.ms.name")
+              - delete_key(attributes, "inner.client.ms.namespace")
+              - delete_key(attributes, "inner.client.cluster.name")
+              - delete_key(attributes, "inner.client.env.type")
+              - set(attributes["namespace"],
+                resource.attributes["k8s.namespace.name"])
+              - set(attributes["container"],
+                resource.attributes["k8s.container.name"])
+              - set(attributes["service_name"],
+                resource.attributes["service.name"])
+              - set(attributes["pod"], resource.attributes["k8s.pod.name"])
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    service:
+      extensions:
+        - health_check
+      pipelines:
+        metrics:
+          exporters:
+            - debug
+            - prometheus
+          processors:
+            - memory_limiter
+            - filter/metric_apis
+            - transform
+            - batch
+          receivers:
+            - otlp
+        traces:
+          exporters:
+            - debug
+            - otlp
+          processors:
+            - memory_limiter
+            - batch
+          receivers:
+            - otlp
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          level: normal
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: 8888
+                    without_scope_info: true
+                    without_type_suffix: true
+                    without_units: true
+  configVersions: 3
+  daemonSetUpdateStrategy: {}
+  deploymentUpdateStrategy: {}
+  ingress:
+    route: {}
+  ipFamilyPolicy: SingleStack
+  managementState: managed
+  mode: deployment
+  networkPolicy: {}
+  observability:
+    metrics:
+      enableMetrics: true
+  podDnsConfig: {}
+  replicas: 1
+  resources:
+    limits:
+      cpu: "2"
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  securityContext:
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+  targetAllocator:
+    allocationStrategy: consistent-hashing
+    collectorNotReadyGracePeriod: 30s
+    collectorTargetReloadInterval: 30s
+    filterStrategy: relabel-config
+    observability:
+      metrics: {}
+    prometheusCR:
+      evaluationInterval: 30s
+      podMonitorNamespaceSelector: {}
+      probeNamespaceSelector: {}
+      scrapeConfigNamespaceSelector: {}
+      scrapeInterval: 30s
+      serviceMonitorNamespaceSelector: {}
+    resources: {}
+  tolerations:
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/control-plane
+      operator: Exists
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/master
+      operator: Exists
+  upgradeStrategy: automatic
+status:
+  image: build-harbor.alauda.cn/asm/opentelemetry-collector:0.147.0-r0
+  scale:
+    replicas: 1
+    selector: app.kubernetes.io/component=opentelemetry-collector,app.kubernetes.io/instance=cpaas-system.otel,app.kubernetes.io/managed-by=opentelemetry-operator,app.kubernetes.io/name=otel-collector,app.kubernetes.io/part-of=opentelemetry,app.kubernetes.io/version=latest,prometheus=kube-prometheus
+    statusReplicas: 1/1
+  version: 0.147.0
