@@ -285,21 +285,7 @@ Trace ingestion is restored at this point. New traces are written to the new Jae
 
     You should see legacy indices matching `acp-tracing-<cluster>-jaeger-*` (date-stamped, no longer growing) and new indices matching `acp-<cluster>-jaeger-*-000001` (rollover, growing).
 
-4. Watch the Collector export-failure metric to make sure the new pipeline is not silently dropping spans:
-
-    ```bash {name=migrate-acp-tracing:watch-export-failures}
-    kubectl -n cpaas-system port-forward deployment/otel-collector 8888:8888 \
-      --address 127.0.0.1 >/dev/null 2>&1 &
-    PF=$!
-    sleep 2
-    curl -s http://127.0.0.1:8888/metrics \
-      | grep -E '^otelcol_exporter_send_failed_spans_total' || true
-    kill "$PF" 2>/dev/null
-    ```
-
-    `otelcol_exporter_send_failed_spans_total{exporter="otlp/jaeger-v2"}` should remain flat.
-
-5. Spot-check that a real business request produces a trace in the new Jaeger UI. Pick one or two already-instrumented applications, trigger a representative request, and look up its traceID in the new Jaeger UI.
+4. Spot-check that a real business request produces a trace in the new Jaeger UI. Pick one or two already-instrumented applications, trigger a representative request, and look up its traceID in the new Jaeger UI.
 
 </Steps>
 
@@ -330,15 +316,15 @@ If you opted into [(Optional) Enabling dual export to the legacy Jaeger](#option
 Delete the legacy `Jaeger` instance and its supporting resources:
 
 ```bash {name=migrate-acp-tracing:delete-legacy-jaeger}
-kubectl -n cpaas-system delete ingress      jaeger-prod-query        --ignore-not-found
-kubectl -n cpaas-system delete podmonitor   jaeger-prod-monitor      --ignore-not-found
-kubectl -n cpaas-system delete jaeger       jaeger-prod              --ignore-not-found
-kubectl -n cpaas-system delete rolebinding  jaeger-prod-rb           --ignore-not-found
-kubectl -n cpaas-system delete role         jaeger-prod-role         --ignore-not-found
-kubectl -n cpaas-system delete sa           jaeger-prod-sa           --ignore-not-found
-kubectl -n cpaas-system delete secret       jaeger-prod-oauth2-proxy --ignore-not-found
+kubectl -n cpaas-system delete ingress      jaeger-prod-query         --ignore-not-found
+kubectl -n cpaas-system delete podmonitor   jaeger-prod-monitor       --ignore-not-found
+kubectl -n cpaas-system delete jaeger       jaeger-prod               --ignore-not-found
+kubectl -n cpaas-system delete rolebinding  jaeger-prod-rb            --ignore-not-found
+kubectl -n cpaas-system delete role         jaeger-prod-role          --ignore-not-found
+kubectl -n cpaas-system delete sa           jaeger-prod-sa            --ignore-not-found
+kubectl -n cpaas-system delete secret       jaeger-prod-oauth2-proxy  --ignore-not-found
 kubectl -n cpaas-system delete secret       jaeger-prod-es-basic-auth --ignore-not-found
-kubectl -n cpaas-system delete configmap    jaeger-prod-oauth2-proxy --ignore-not-found
+kubectl -n cpaas-system delete configmap    jaeger-prod-oauth2-proxy  --ignore-not-found
 ```
 
 Uninstall the `Alauda build of Jaeger` Operator:
@@ -361,7 +347,7 @@ kubectl delete crd jaegers.jaegertracing.io
 
 ### Disable the legacy feature switch and clean up legacy indices \{#disable-the-legacy-feature-switch-and-clean-up-legacy-indices}
 
-1. In the ACP web console, open **Feature Switch** and disable `acp-tracing-ui`. The platform-customized **Observability → Tracing** view is no longer functional after the legacy Jaeger is uninstalled. Update internal documentation and runbooks to point to the Jaeger UI URL `<platform-url>/clusters/<cluster>/jaeger`.
+1. In the ACP web console, open **Feature Switch** and disable `acp-tracing-ui`. The platform-customized **Observability → Tracing** view is no longer functional after the legacy Alauda Build of OpenTelemetry v1 Operator is uninstalled. Update internal documentation and runbooks to point to the Jaeger UI URL `<platform-url>/clusters/<cluster>/jaeger`.
 
 2. The legacy `jaeger-es-index-cleaner` CronJob was deleted together with the legacy `Jaeger` instance, so any remaining `acp-tracing-<cluster>-jaeger-*` indices in Elasticsearch are no longer auto-rotated. Delete them manually:
 
@@ -407,10 +393,6 @@ spec:
         balancer_name: round_robin
         tls:
           insecure: true
-        sending_queue:
-          enabled: true
-        retry_on_failure:
-          enabled: true
     service:
       pipelines:
         traces:
@@ -423,21 +405,7 @@ kubectl rollout status deployment/otel-collector -n cpaas-system --timeout=180s
 `service.pipelines.traces.exporters` is an array, and a merge patch replaces arrays in their entirety rather than appending. The patch above lists every exporter that must remain in the trace pipeline (`debug`, `otlp/jaeger-v2`, `otlp/jaeger-v1`). If your trace pipeline contains additional custom exporters, add them to this list before applying the patch.
 :::
 
-After the patch is applied, every span is written to both Jaeger backends. Verify by:
-
-```bash {name=migrate-acp-tracing:verify-dual-export}
-# Re-run telemetrygen and confirm the traces appear in BOTH UIs.
-# - Legacy Jaeger UI: <platform-url>/clusters/<cluster>/acp/jaeger
-# - New Jaeger UI:    <platform-url>/clusters/<cluster>/jaeger
-kubectl -n cpaas-system port-forward deployment/otel-collector 8888:8888 --address 127.0.0.1 >/dev/null 2>&1 &
-PF=$!
-sleep 2
-curl -s http://127.0.0.1:8888/metrics \
-  | grep -E '^otelcol_exporter_send_failed_spans_total' || true
-kill "$PF" 2>/dev/null
-```
-
-`otelcol_exporter_send_failed_spans_total` should remain flat for both `exporter="otlp/jaeger-v2"` and `exporter="otlp/jaeger-v1"`.
+After the patch is applied, every span is written to both Jaeger backends.
 
 ### Stop the dual export \{#stop-the-dual-export}
 
@@ -458,14 +426,6 @@ kubectl rollout status deployment/otel-collector -n cpaas-system --timeout=180s
 ```
 
 After this patch, the v2 Collector writes traces only to the new Jaeger. You can now proceed with [Uninstall the legacy Jaeger instance](#uninstall-the-legacy-jaeger-instance).
-
-## Verification checklist \{#verification-checklist}
-
-- [ ] Both `cpaas-system/otel` and `jaeger-system/jaeger` `OpenTelemetryCollector` resources are `Ready`.
-- [ ] `telemetrygen` traces are searchable in the new Jaeger UI.
-- [ ] The new index family `acp-<cluster>-jaeger-*` exists in Elasticsearch and is growing; the legacy index family `acp-tracing-<cluster>-jaeger-*` is no longer growing and ages out over the observation period.
-- [ ] `otelcol_exporter_send_failed_spans_total{exporter="otlp/jaeger-v2"}` does not grow continuously. (If dual export is enabled, the same applies to `exporter="otlp/jaeger-v1"`.)
-- [ ] After the observation period, the legacy Jaeger is uninstalled, the `acp-tracing-ui` feature switch is disabled, and legacy indices are cleaned up. (If dual export was enabled, it has been stopped first.)
 
 ## Rollback \{#rollback}
 
