@@ -403,7 +403,7 @@ Trade-offs:
 
 Dual export does **not** backfill pre-cutover traces into the new Jaeger; pre-cutover traces are only ever queryable through the legacy Jaeger UI.
 
-### Enable dual export
+### Enable dual export \{#enable-dual-export}
 
 After [Switch the v2 OpenTelemetry Collector to the new Jaeger](#switch-the-v2-opentelemetry-collector-to-the-new-jaeger) has converged, the `otel` Collector has `otlp/jaeger-v2` as the only trace exporter writing to a Jaeger backend (the trace pipeline is `[debug, otlp/jaeger-v2]`). Patch the Collector to add the legacy Jaeger back as a second exporter `otlp/jaeger-v1`, mirroring the legacy-Jaeger endpoint, headless-Service load balancing, and TLS settings of the original `otlp` exporter that was removed in the switch step:
 
