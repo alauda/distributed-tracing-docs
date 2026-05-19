@@ -254,7 +254,7 @@ Trace ingestion is restored at this point. New traces are written to the new Jae
     apiVersion: v1
     kind: Pod
     metadata:
-      name: migration-check
+      name: jaeger-migration-check
     spec:
       restartPolicy: Never
       containers:
@@ -265,16 +265,16 @@ Trace ingestion is restored at this point. New traces are written to the new Jae
             - --otlp-endpoint=otel-collector.cpaas-system.svc.cluster.local:4317
             - --otlp-insecure
             - --duration=120s
-            - --service=migration-check
+            - --service=jaeger-migration-check
             - --rate=2
     EOF
 
     kubectl wait -n cpaas-system --for=jsonpath='{.status.phase}'=Succeeded \
-      pod/migration-check --timeout=10m
-    kubectl delete -n cpaas-system pod/migration-check
+      pod/jaeger-migration-check --timeout=10m
+    kubectl delete -n cpaas-system pod/jaeger-migration-check
     ```
 
-    The new Jaeger UI at `<platform-url>/clusters/<cluster>/jaeger` should list the `migration-check` service and its traces.
+    The new Jaeger UI at `<platform-url>/clusters/<cluster>/jaeger` should list the `jaeger-migration-check` service and its traces.
 
 3. Confirm that the new index family is being created in Elasticsearch and that the legacy index family is intact:
 
