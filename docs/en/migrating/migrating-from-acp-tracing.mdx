@@ -237,7 +237,15 @@ Trace ingestion is restored at this point. New traces are written to the new Jae
     kubectl get opentelemetrycollector -A
     ```
 
-    The expected output shows two `OpenTelemetryCollector` resources (`cpaas-system/otel` and `jaeger-system/jaeger`), both `Ready`.
+    Example output:
+
+    ```text
+    NAMESPACE       NAME     MODE         VERSION   READY   AGE   IMAGE                                                           MANAGEMENT
+    cpaas-system    otel     deployment   0.147.0   1/1     5h    build-harbor.alauda.cn/asm/opentelemetry-collector:0.147.0-r0   managed
+    jaeger-system   jaeger   deployment   0.147.0   1/1     33m   build-harbor.alauda.cn/asm/jaeger:2.16.0-r2                     managed
+    ```
+
+    Both `cpaas-system/otel` (the application-facing Collector, redeployed by the [OpenTelemetry v1 → v2 migration](#migrate-alauda-build-of-opentelemetry-to-v2)) and `jaeger-system/jaeger` (the new Jaeger v2 backend, deployed in [Deploy the new Jaeger v2 instance](#deploy-the-new-jaeger-v2-instance)) must report `READY` as `<ready>/<desired>` with `<ready>` equal to `<desired>` (typically `1/1`) and `MANAGEMENT` as `managed`. If the `READY` column shows `0/1` or is empty, inspect the Collector pod logs in the corresponding namespace before continuing.
 
 2. Generate sample traces with `telemetrygen` and verify they appear in the new Jaeger UI:
 
