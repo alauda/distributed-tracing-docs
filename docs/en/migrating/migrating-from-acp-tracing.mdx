@@ -464,18 +464,6 @@ For rollback of the OpenTelemetry v1 → v2 stage, see <ExternalSiteLink name="o
 | Legacy Jaeger has problems during the observation period (dual export enabled) | Patch the v2 Collector to drop `otlp/jaeger-v1` from the trace pipeline. This is equivalent to ending dual export early; pre-cutover traces older than the legacy retention will not be reachable in the new Jaeger. |
 | After the observation period — full rollback to the legacy stack | First, point the v2 Collector trace pipeline back at the legacy Jaeger. Then follow <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#rollback" children="Rollback" /> in the OpenTelemetry v2 migration guide and roll out the application Pods again so that the legacy Java agent is re-injected. The new Jaeger v2 instance and the OpenTelemetry v2 Operator must be uninstalled before the legacy Operator is reinstalled. |
 
-## Troubleshooting \{#troubleshooting}
-
-| Symptom | Likely cause | Resolution |
-| :--- | :--- | :--- |
-| The new Jaeger Pod is `CrashLoopBackOff` after `jaeger.yaml` is applied | The `jaeger-es-rollover-init` Job was not run, the ILM policy was not created, or `index_prefix` does not match the prefix used during initialization | Re-run the initialization steps in [Installing Alauda Build of Jaeger v2](../installing/installing-distributed-tracing.mdx#installing-alauda-build-of-jaeger-v2); confirm `create_mappings: false` and matching `index_prefix` |
-| `otelcol_exporter_send_failed_spans_total{exporter="otlp/jaeger-v2"}` grows continuously | The new Jaeger is unreachable, the OAuth2 Proxy port mapping is incorrect, or the Service name does not match the exporter `endpoint` | Check the new Jaeger Pod readiness, port `4317` of `jaeger-collector.jaeger-system`, and the index prefix used at initialization |
-| Users report that traces from "yesterday" are missing in the new Jaeger UI | Pre-cutover traces are only stored in the legacy Jaeger; the new Jaeger UI only contains traces from the cutover onwards | Direct users to the legacy Jaeger UI at `<platform-url>/clusters/<cluster>/acp/jaeger` for pre-cutover traces. If this is a recurring concern, consider enabling [(Optional) Enabling dual export to the legacy Jaeger](#optional-enabling-dual-export-to-the-legacy-jaeger) early in the observation window for cutover-window traces |
-| Traces appear in the new Jaeger but the **Observability → Tracing** view in ACP is empty | The legacy view is gated by the `acp-tracing-ui` feature switch and is incompatible with the new pipeline | Disable the feature switch and direct users to `<platform-url>/clusters/<cluster>/jaeger` |
-| `otelcol_exporter_send_failed_spans_total{exporter="otlp/jaeger-v1"}` grows after enabling dual export | The legacy Jaeger has been uninstalled or its Service name changed | Either restore the legacy Jaeger or proceed to [Stop the dual export](#stop-the-dual-export) ahead of schedule |
-
-For OpenTelemetry Operator, Collector, or `Instrumentation` issues encountered during the OpenTelemetry v1 → v2 stage, see <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#troubleshooting" children="Troubleshooting" /> in the OpenTelemetry v2 migration guide. For deeper troubleshooting, see [Troubleshooting](../troubleshooting.mdx).
-
 ## FAQ \{#faq}
 
 **Do applications need to update their OTLP endpoints?**
@@ -503,12 +491,6 @@ No. The legacy Jaeger uses date-stamped daily indices (`acp-tracing-<cluster>-ja
 **How much extra Elasticsearch storage is required during the observation period?**
 
 With the default single-export path, the new index family grows from zero while the legacy index family ages out over the legacy retention; plan for one extra full retention's worth of trace storage as a steady-state buffer. With dual export enabled, plan for approximately twice the steady-state size of the legacy index family for the duration of the observation period, plus headroom for retries and ingestion bursts.
-
-**What happens to Kiali / Service Mesh integrations?**
-
-- Clusters that only use ACP Tracing (no Service Mesh): no change is required beyond this guide.
-- Clusters that use Alauda Service Mesh v1 with the legacy Jaeger: migrate the mesh to Alauda Service Mesh v2 first; the v2 OpenTelemetry Operator is incompatible with Service Mesh v1.
-- Clusters that already use Alauda Service Mesh v2 with the legacy Jaeger: reusing the legacy Collector Service name (`otel-collector.cpaas-system`) keeps the existing `meshConfig.extensionProviders[].opentelemetry.service` value valid. For details, see the Collector namespace guidance in <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#collector-migration-overview" children="What this migration changes" />.
 
 **Can Service Performance Monitoring (SPM) be enabled as part of the migration?**
 
