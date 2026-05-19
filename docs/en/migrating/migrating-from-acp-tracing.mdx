@@ -353,9 +353,6 @@ Uninstall the `Alauda build of Jaeger` Operator:
 
 ```bash {name=migrate-acp-tracing:uninstall-jaeger-operator}
 kubectl -n jaeger-operator delete subscription jaeger-operator --ignore-not-found
-
-CSV=$(kubectl -n jaeger-operator get csv -o name | grep -i jaeger-operator)
-[ -n "$CSV" ] && kubectl -n jaeger-operator delete "$CSV"
 ```
 
 :::tip
