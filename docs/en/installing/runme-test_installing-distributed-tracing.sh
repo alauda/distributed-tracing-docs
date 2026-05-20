@@ -239,6 +239,16 @@ test_installing_distributed_tracing() {
         return 1
     }
 
+    # 步骤 11.1: 等待 OpenTelemetryCollector 状态副本数收敛
+    log_info "步骤 11.1: 等待 OpenTelemetryCollector status.scale.statusReplicas=1/1"
+    kubectl wait "opentelemetrycollector/${JAEGER_INSTANCE_NAME}" \
+        -n "${JAEGER_NS}" \
+        --for=jsonpath='{.status.scale.statusReplicas}'=1/1 \
+        --timeout=180s || {
+        log_error "等待 OpenTelemetryCollector status.scale.statusReplicas=1/1 失败"
+        return 1
+    }
+
     # 步骤 12: 等待 Jaeger collector deployment 就绪
     log_info "步骤 12: 等待 Jaeger collector 就绪"
     runme run install-tracing:wait-jaeger-rollout || {
@@ -304,7 +314,7 @@ test_installing_distributed_tracing() {
 
     # 步骤 19-26:（可选）Service Performance Monitoring (SPM) 章节
     # SPM 需 ACP monitoring，默认跳过；设置 TRACING_TEST_SPM=true 启用。
-    if [ "${TRACING_TEST_SPM:-false}" = "true" ]; then
+    if [ "${TRACING_TEST_SPM:-true}" = "true" ]; then
         _test_spm || return 1
     else
         log_warn "跳过 SPM 章节测试（未设置 TRACING_TEST_SPM=true）"
