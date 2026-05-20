@@ -91,12 +91,13 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 4. Create the Jaeger namespace and Elasticsearch credentials Secret:
 
     ```bash {name=install-tracing:create-jaeger-ns-and-es-secret}
-    kubectl create namespace ${JAEGER_NS}
+    kubectl get namespace ${JAEGER_NS} &> /dev/null || kubectl create namespace ${JAEGER_NS}
 
     kubectl create secret generic es-credentials \
       --namespace=${JAEGER_NS} \
       --from-literal=ES_USER=${ES_USER} \
-      --from-literal=ES_PASS=${ES_PASS}
+      --from-literal=ES_PASS=${ES_PASS} \
+      --dry-run=client -o yaml | kubectl apply -f -
     ```
 
     Verify that the Secret was created:
@@ -229,7 +230,8 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     kubectl create secret generic ${JAEGER_INSTANCE_NAME}-oauth2-proxy \
       --namespace=${JAEGER_NS} \
       --from-literal=OAUTH2_PROXY_CLIENT_SECRET=${OIDC_CLIENT_SECRET} \
-      --from-literal=OAUTH2_PROXY_COOKIE_SECRET=${OAUTH2_PROXY_COOKIE_SECRET}
+      --from-literal=OAUTH2_PROXY_COOKIE_SECRET=${OAUTH2_PROXY_COOKIE_SECRET} \
+      --dry-run=client -o yaml | kubectl apply -f -
     ```
 
 9. Create a file named `jaeger.yaml` with the following content:
@@ -658,7 +660,8 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
     kubectl create secret generic monitoring-credentials \
       --namespace=${JAEGER_NS} \
       --from-literal=username=${MONITORING_USERNAME} \
-      --from-literal=password=${MONITORING_PASSWORD}
+      --from-literal=password=${MONITORING_PASSWORD} \
+      --dry-run=client -o yaml | kubectl apply -f -
     ```
 
 3. Patch the OpenTelemetry Collector to enable the SpanMetrics Connector. This adds a `spanmetrics` connector that generates RED metrics from spans and exports them via a Prometheus exporter:
