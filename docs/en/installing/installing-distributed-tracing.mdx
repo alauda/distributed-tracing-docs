@@ -493,10 +493,9 @@ echo "Jaeger UI: ${PLATFORM_URL}${JAEGER_BASEPATH}"
 
 After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receive trace data from instrumented applications and forward it to Jaeger.
 
-1. Create an `OpenTelemetryCollector` resource:
+1. Create a file named `otel-collector.yaml` with the following content:
 
-    ```bash {name=install-tracing:create-otel-collector}
-    kubectl apply -f - <<EOF
+    ```yaml title="otel-collector.yaml" {name=install-tracing:otel-collector-yaml}
     apiVersion: opentelemetry.io/v1beta1
     kind: OpenTelemetryCollector
     metadata:
@@ -564,7 +563,6 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
                       without_scope_info: true
                       without_type_suffix: true
                       without_units: true
-    EOF
     ```
 
     <Callouts>
@@ -576,7 +574,13 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
       6. The trace pipeline receives data via OTLP and Zipkin, processes it through `memory_limiter` and `batch`, and exports to both the `debug` exporter (for logging) and `otlp/traces` (for forwarding to Jaeger).
     </Callouts>
 
-2. Wait for the Collector pod to be ready:
+2. Render the manifest with `envsubst` and apply the configuration:
+
+    ```bash {name=install-tracing:apply-otel-collector}
+    envsubst < otel-collector.yaml | kubectl apply -f -
+    ```
+
+3. Wait for the Collector pod to be ready:
 
     ```bash {name=install-tracing:wait-otel-rollout}
     kubectl rollout status deployment/otel-collector \
@@ -646,7 +650,7 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
 
 1. Retrieve monitoring endpoint and credentials from the cluster:
 
-    ```bash
+    ```bash {name=install-tracing-spm:get-monitoring-config}
     export MONITORING_URL=$(kubectl get feature monitoring -o jsonpath='{.spec.accessInfo.database.address}')
     MONITORING_SECRET_NAME=$(kubectl get feature monitoring -o jsonpath='{.spec.accessInfo.database.basicAuth.secretName}')
 
@@ -656,7 +660,7 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
 
 2. Create a Secret for monitoring credentials:
 
-    ```bash
+    ```bash {name=install-tracing-spm:create-monitoring-secret}
     kubectl create secret generic monitoring-credentials \
       --namespace=${JAEGER_NS} \
       --from-literal=username=${MONITORING_USERNAME} \
@@ -666,7 +670,7 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
 
 3. Patch the OpenTelemetry Collector to enable the SpanMetrics Connector. This adds a `spanmetrics` connector that generates RED metrics from spans and exports them via a Prometheus exporter:
 
-    ```bash
+    ```bash {name=install-tracing-spm:patch-otel-collector}
     kubectl patch opentelemetrycollector otel -n ${JAEGER_NS} --type=merge -p '
     spec:
       config:
@@ -684,14 +688,14 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
 
     Wait for the Collector to restart:
 
-    ```bash
+    ```bash {name=install-tracing-spm:wait-otel-rollout}
     kubectl rollout status deployment/otel-collector \
       -n ${JAEGER_NS} --timeout=180s
     ```
 
 4. Create a file named `jaeger-spm-patch.yaml` with the following content. This patch adds a PromQL metrics backend to Jaeger and enables the Monitor tab:
 
-    ```yaml title="jaeger-spm-patch.yaml"
+    ```yaml title="jaeger-spm-patch.yaml" {name=install-tracing-spm:jaeger-spm-patch-yaml}
     spec:
       volumes:
         - name: es-credentials
@@ -760,14 +764,14 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
 
 5. Apply the patch:
 
-    ```bash
+    ```bash {name=install-tracing-spm:apply-jaeger-patch}
     kubectl patch opentelemetrycollector ${JAEGER_INSTANCE_NAME} -n ${JAEGER_NS} \
       --type=merge -p "$(envsubst < jaeger-spm-patch.yaml)"
     ```
 
     Wait for Jaeger to restart:
 
-    ```bash
+    ```bash {name=install-tracing-spm:wait-jaeger-rollout}
     kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector \
       -n ${JAEGER_NS} --timeout=180s
     ```

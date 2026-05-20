@@ -23,6 +23,105 @@ _in_otel_repo() {
     return $rc
 }
 
+# 部署 telemetrygen 生成测试 trace。
+# 取出文档代码块后按需改写再执行（镜像替换与测试时长两处改动合并于此函数）：
+#   - 测试时长：由 TRACING_TEST_DURATION 控制（默认 60s），覆盖文档默认的 150s
+#   - 镜像：USE_MESH_V2_TEST_SUITE_PLUGIN=true 时，参考 projects/mesh/project.sh 的
+#     kubectl_apply_with_mirror，从 mesh-v2-test-suite 集群插件 registry 改写 telemetrygen 镜像
+_deploy_telemetrygen() {
+    local content
+    content=$(runme print install-tracing:deploy-telemetrygen 2>/dev/null)
+    if [ -z "$content" ]; then
+        log_error "无法获取代码块内容: install-tracing:deploy-telemetrygen"
+        return 1
+    fi
+
+    # 改写测试时长（文档默认 150s）
+    local duration="${TRACING_TEST_DURATION:-60s}"
+    log_info "telemetrygen 测试时长: $duration"
+    content="${content//--duration=150s/--duration=$duration}"
+
+    # 改写镜像：USE_MESH_V2_TEST_SUITE_PLUGIN=true 时使用集群插件镜像仓库
+    if [ "${USE_MESH_V2_TEST_SUITE_PLUGIN:-false}" = "true" ]; then
+        local registry
+        registry=$(kubectl -n cpaas-system get cm mesh-v2-test-suite-manifest \
+            -o jsonpath='{.data.registry}' 2>/dev/null)
+        if [ -z "$registry" ]; then
+            log_error "USE_MESH_V2_TEST_SUITE_PLUGIN=true 但未能从 cpaas-system/mesh-v2-test-suite-manifest 读取 data.registry"
+            return 1
+        fi
+        log_info "使用 mesh-v2-test-suite 集群插件镜像仓库: $registry"
+        content=$(printf '%s' "$content" | sed "s|ghcr\.io/open-telemetry/|${registry}/asm/|")
+    fi
+
+    eval "$content"
+}
+
+# SPM (Service Performance Monitoring) 章节测试，覆盖 install-tracing-spm:* 代码块。
+# 由 test_installing_distributed_tracing 在 TRACING_TEST_SPM=true 时调用。
+_test_spm() {
+    log_header "Service Performance Monitoring (SPM) 测试"
+
+    # 步骤 19: 拉取 monitoring 端点与凭据
+    log_info "步骤 19: 拉取 monitoring 配置"
+    eval "$(runme print install-tracing-spm:get-monitoring-config)" || {
+        log_error "拉取 monitoring 配置失败"
+        return 1
+    }
+
+    # 步骤 20: 创建 monitoring 凭据 Secret
+    log_info "步骤 20: 创建 monitoring 凭据 Secret"
+    runme run install-tracing-spm:create-monitoring-secret || {
+        log_error "创建 monitoring 凭据 Secret 失败"
+        return 1
+    }
+
+    # 步骤 21: Patch OpenTelemetry Collector 启用 SpanMetrics Connector
+    log_info "步骤 21: Patch OpenTelemetry Collector 启用 spanmetrics"
+    runme run install-tracing-spm:patch-otel-collector || {
+        log_error "Patch OpenTelemetry Collector 失败"
+        return 1
+    }
+
+    # 步骤 22: 等待 OpenTelemetry Collector 重启就绪
+    log_info "步骤 22: 等待 OpenTelemetry Collector 重启就绪"
+    runme run install-tracing-spm:wait-otel-rollout || {
+        log_error "等待 OpenTelemetry Collector 重启失败"
+        return 1
+    }
+
+    # 步骤 23: 生成 jaeger-spm-patch.yaml 到 /tmp
+    log_info "步骤 23: 生成 /tmp/jaeger-spm-patch.yaml"
+    runme print install-tracing-spm:jaeger-spm-patch-yaml > /tmp/jaeger-spm-patch.yaml || {
+        log_error "生成 jaeger-spm-patch.yaml 失败"
+        return 1
+    }
+
+    # 步骤 24: 应用 SPM patch（需在 /tmp 目录下执行）
+    log_info "步骤 24: 应用 jaeger-spm-patch.yaml"
+    kubectl_apply_runme_block "install-tracing-spm:apply-jaeger-patch" "/tmp/" || {
+        log_error "应用 jaeger-spm-patch.yaml 失败"
+        return 1
+    }
+
+    # 步骤 25: 等待 Jaeger 重启就绪
+    log_info "步骤 25: 等待 Jaeger 重启就绪"
+    runme run install-tracing-spm:wait-jaeger-rollout || {
+        log_error "等待 Jaeger 重启失败"
+        return 1
+    }
+
+    # 步骤 26: 重新部署 telemetrygen 验证 SPM 指标（文档 Verification 要求）
+    log_info "步骤 26: 重新部署 telemetrygen 验证 SPM"
+    _deploy_telemetrygen || {
+        log_error "SPM telemetrygen 验证失败"
+        return 1
+    }
+
+    log_success "SPM 测试完成"
+    return 0
+}
+
 # 测试函数：分布式调用链安装
 test_installing_distributed_tracing() {
     log_info "=========================================="
@@ -175,10 +274,17 @@ test_installing_distributed_tracing() {
         return 1
     }
 
-    # 步骤 16: 创建 otel OpenTelemetryCollector
-    log_info "步骤 16: 创建 OpenTelemetry Collector"
-    runme run install-tracing:create-otel-collector || {
-        log_error "创建 OpenTelemetry Collector 失败"
+    # 步骤 16: 生成 otel-collector.yaml 到 /tmp
+    log_info "步骤 16: 生成 /tmp/otel-collector.yaml"
+    runme print install-tracing:otel-collector-yaml > /tmp/otel-collector.yaml || {
+        log_error "生成 otel-collector.yaml 失败"
+        return 1
+    }
+
+    # 步骤 16.1: envsubst 渲染并 apply（需在 /tmp 目录下执行）
+    log_info "步骤 16.1: 渲染并应用 otel-collector.yaml"
+    kubectl_apply_runme_block "install-tracing:apply-otel-collector" "/tmp/" || {
+        log_error "应用 otel-collector.yaml 失败"
         return 1
     }
 
@@ -189,12 +295,20 @@ test_installing_distributed_tracing() {
         return 1
     }
 
-    # 步骤 18: 部署 telemetrygen 生成测试 trace（内含 wait/delete，约 150s）
+    # 步骤 18: 部署 telemetrygen 生成测试 trace（内含 wait/delete）
     log_info "步骤 18: 部署 telemetrygen 生成测试 trace"
-    runme run install-tracing:deploy-telemetrygen || {
+    _deploy_telemetrygen || {
         log_error "telemetrygen 端到端验证失败"
         return 1
     }
+
+    # 步骤 19-26:（可选）Service Performance Monitoring (SPM) 章节
+    # SPM 需 ACP monitoring，默认跳过；设置 TRACING_TEST_SPM=true 启用。
+    if [ "${TRACING_TEST_SPM:-false}" = "true" ]; then
+        _test_spm || return 1
+    else
+        log_warn "跳过 SPM 章节测试（未设置 TRACING_TEST_SPM=true）"
+    fi
 
     log_success "=========================================="
     log_success "Alauda Distributed Tracing 安装测试完成，所有验证通过！"
