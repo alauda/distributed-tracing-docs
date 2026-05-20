@@ -298,6 +298,16 @@ test_installing_distributed_tracing() {
         return 1
     }
 
+    # 步骤 16.2: 等待 otel OpenTelemetryCollector 状态副本数收敛
+    log_info "步骤 16.2: 等待 otel OpenTelemetryCollector status.scale.statusReplicas=1/1"
+    kubectl wait "opentelemetrycollector/otel" \
+        -n "${JAEGER_NS}" \
+        --for=jsonpath='{.status.scale.statusReplicas}'=1/1 \
+        --timeout=180s || {
+        log_error "等待 otel OpenTelemetryCollector status.scale.statusReplicas=1/1 失败"
+        return 1
+    }
+
     # 步骤 17: 等待 otel collector deployment 就绪
     log_info "步骤 17: 等待 OpenTelemetry Collector 就绪"
     runme run install-tracing:wait-otel-rollout || {
