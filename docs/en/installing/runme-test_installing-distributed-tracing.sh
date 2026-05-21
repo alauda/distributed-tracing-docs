@@ -114,7 +114,7 @@ _test_spm() {
 
     # 步骤 26: 重新部署 telemetrygen 验证 SPM 指标（文档 Verification 要求）
     log_info "步骤 26: 重新部署 telemetrygen 验证 SPM"
-    _deploy_telemetrygen "${TRACING_TELEMETRYGEN_TEST_DURATION_2:-80s}" || {
+    _deploy_telemetrygen "${TRACING_TELEMETRYGEN_TEST_DURATION_2:-130s}" || {
         log_error "SPM telemetrygen 验证失败"
         return 1
     }
@@ -132,10 +132,19 @@ test_installing_distributed_tracing() {
     log_info "开始 Alauda Distributed Tracing 安装测试"
     log_info "=========================================="
 
-    # 步骤 0: 检查 Elasticsearch 依赖（外部强依赖，缺失则 SKIPPED）
+    # 步骤 0: 检查 Elasticsearch 配置（可由 tracing project_prepare 从 ACP ES 自动注入）
     if [ -z "${TRACING_ES_ENDPOINT:-}" ] || [ -z "${TRACING_ES_USER:-}" ] || [ -z "${TRACING_ES_PASS:-}" ]; then
-        log_warn "SKIPPED: 未设置 TRACING_ES_ENDPOINT / TRACING_ES_USER / TRACING_ES_PASS，跳过分布式调用链安装测试"
+        if [ -n "${TRACING_ACP_ES_CLUSTER:-}" ]; then
+            log_error "TRACING_ACP_ES_CLUSTER=${TRACING_ACP_ES_CLUSTER}，但未能注入 TRACING_ES_ENDPOINT / TRACING_ES_USER / TRACING_ES_PASS"
+            return 1
+        fi
+        log_warn "SKIPPED: TRACING_ACP_ES_CLUSTER 为空且未设置 TRACING_ES_ENDPOINT / TRACING_ES_USER / TRACING_ES_PASS，跳过分布式调用链安装测试"
         return 0
+    fi
+    if [ -n "${TRACING_ACP_ES_CLUSTER:-}" ]; then
+        log_info "使用 ACP ES 配置: cluster=${TRACING_ACP_ES_CLUSTER} endpoint=${TRACING_ES_ENDPOINT}"
+    else
+        log_info "使用手动 Elasticsearch 配置: endpoint=${TRACING_ES_ENDPOINT}"
     fi
 
     # 步骤 1: 安装 Alauda Build of OpenTelemetry v2 Operator（跨仓库前置依赖）
