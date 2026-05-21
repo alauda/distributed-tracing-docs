@@ -582,7 +582,7 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
 
 3. Wait for the Collector pod to be ready:
 
-    ```bash {name=install-tracing:wait-otel-rollout}
+    ```bash {name=install-tracing:wait-otel-collector-rollout}
     kubectl rollout status deployment/otel-collector \
       -n ${JAEGER_NS} --timeout=180s
     ```
@@ -688,7 +688,7 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
 
     Wait for the Collector to restart:
 
-    ```bash {name=install-tracing-spm:wait-otel-rollout}
+    ```bash {name=install-tracing-spm:wait-otel-collector-rollout}
     kubectl rollout status deployment/otel-collector \
       -n ${JAEGER_NS} --timeout=180s
     ```

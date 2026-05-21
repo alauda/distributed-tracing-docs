@@ -37,7 +37,7 @@ _deploy_telemetrygen() {
     fi
 
     # 改写测试时长（文档默认 150s）
-    local duration="${TRACING_TEST_DURATION:-60s}"
+    local duration="${TRACING_TEST_DURATION:-80s}"
     log_info "telemetrygen 测试时长: $duration"
     content="${content//--duration=150s/--duration=$duration}"
 
@@ -85,7 +85,7 @@ _test_spm() {
 
     # 步骤 22: 等待 OpenTelemetry Collector 重启就绪
     log_info "步骤 22: 等待 OpenTelemetry Collector 重启就绪"
-    runme run install-tracing-spm:wait-otel-rollout || {
+    runme run install-tracing-spm:wait-otel-collector-rollout || {
         log_error "等待 OpenTelemetry Collector 重启失败"
         return 1
     }
@@ -117,6 +117,9 @@ _test_spm() {
         log_error "SPM telemetrygen 验证失败"
         return 1
     }
+
+    # 打印 Jaeger UI URL
+    runme run install-tracing:print-jaeger-url
 
     log_success "SPM 测试完成"
     return 0
@@ -310,7 +313,7 @@ test_installing_distributed_tracing() {
 
     # 步骤 17: 等待 otel collector deployment 就绪
     log_info "步骤 17: 等待 OpenTelemetry Collector 就绪"
-    runme run install-tracing:wait-otel-rollout || {
+    runme run install-tracing:wait-otel-collector-rollout || {
         log_error "等待 OpenTelemetry Collector 就绪失败"
         return 1
     }
