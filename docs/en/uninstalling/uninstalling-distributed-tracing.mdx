@@ -80,7 +80,7 @@ For more details, see <ExternalSiteLink name="opentelemetry" href="/uninstalling
 
 Set the environment variables to match the values used during installation:
 
-```bash
+```bash {name=uninstall-tracing:set-env}
 export JAEGER_NS="jaeger-system"
 export JAEGER_INSTANCE_NAME="jaeger"
 ```
@@ -93,13 +93,13 @@ If you customized these values during installation, replace them with your actua
 
 Delete the `otel` OpenTelemetry Collector instance:
 
-```bash
+```bash {name=uninstall-tracing:delete-otel-collector}
 kubectl delete opentelemetrycollector otel -n ${JAEGER_NS}
 ```
 
 **Example output**
 
-```
+```text {name=uninstall-tracing:delete-otel-collector-output}
 opentelemetrycollector.opentelemetry.io "otel" deleted
 ```
 
@@ -107,25 +107,25 @@ opentelemetrycollector.opentelemetry.io "otel" deleted
 
 Delete the Jaeger OpenTelemetry Collector instance:
 
-```bash
+```bash {name=uninstall-tracing:delete-jaeger-collector}
 kubectl delete opentelemetrycollector ${JAEGER_INSTANCE_NAME} -n ${JAEGER_NS}
 ```
 
 **Example output**
 
-```
+```text {name=uninstall-tracing:delete-jaeger-collector-output}
 opentelemetrycollector.opentelemetry.io "jaeger" deleted
 ```
 
 ### Delete the Jaeger namespace
 
-```bash
+```bash {name=uninstall-tracing:delete-jaeger-ns}
 kubectl delete namespace ${JAEGER_NS}
 ```
 
 **Example output**
 
-```
+```text {name=uninstall-tracing:delete-jaeger-ns-output}
 namespace "jaeger-system" deleted
 ```
 
@@ -137,13 +137,13 @@ The Alauda Build of OpenTelemetry v2 Operator is installed cluster-wide and may 
 
 If the Operator is no longer needed, delete the `opentelemetry-operator2` subscription:
 
-```bash
+```bash {name=uninstall-tracing:delete-otel-subscription}
 kubectl delete subscription opentelemetry-operator2 -n opentelemetry-operator2
 ```
 
 **Example output**
 
-```
+```text {name=uninstall-tracing:delete-otel-subscription-output}
 subscription.operators.coreos.com "opentelemetry-operator2" deleted
 ```
 
