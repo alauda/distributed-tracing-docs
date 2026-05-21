@@ -25,10 +25,12 @@ _in_otel_repo() {
 
 # 部署 telemetrygen 生成测试 trace。
 # 取出文档代码块后按需改写再执行（镜像替换与测试时长两处改动合并于此函数）：
-#   - 测试时长：由 TRACING_TEST_DURATION 控制（默认 60s），覆盖文档默认的 150s
+#   - 测试时长：第一次由 TRACING_TELEMETRYGEN_TEST_DURATION_1 控制（默认 30s），
+#     第二次由 TRACING_TELEMETRYGEN_TEST_DURATION_2 控制（默认 80s），覆盖文档默认的 150s
 #   - 镜像：USE_MESH_V2_TEST_SUITE_PLUGIN=true 时，参考 projects/mesh/project.sh 的
 #     kubectl_apply_with_mirror，从 mesh-v2-test-suite 集群插件 registry 改写 telemetrygen 镜像
 _deploy_telemetrygen() {
+    local duration="$1"
     local content
     content=$(runme print install-tracing:deploy-telemetrygen 2>/dev/null)
     if [ -z "$content" ]; then
@@ -37,7 +39,6 @@ _deploy_telemetrygen() {
     fi
 
     # 改写测试时长（文档默认 150s）
-    local duration="${TRACING_TEST_DURATION:-80s}"
     log_info "telemetrygen 测试时长: $duration"
     content="${content//--duration=150s/--duration=$duration}"
 
@@ -113,7 +114,7 @@ _test_spm() {
 
     # 步骤 26: 重新部署 telemetrygen 验证 SPM 指标（文档 Verification 要求）
     log_info "步骤 26: 重新部署 telemetrygen 验证 SPM"
-    _deploy_telemetrygen || {
+    _deploy_telemetrygen "${TRACING_TELEMETRYGEN_TEST_DURATION_2:-80s}" || {
         log_error "SPM telemetrygen 验证失败"
         return 1
     }
@@ -320,7 +321,7 @@ test_installing_distributed_tracing() {
 
     # 步骤 18: 部署 telemetrygen 生成测试 trace（内含 wait/delete）
     log_info "步骤 18: 部署 telemetrygen 生成测试 trace"
-    _deploy_telemetrygen || {
+    _deploy_telemetrygen "${TRACING_TELEMETRYGEN_TEST_DURATION_1:-30s}" || {
         log_error "telemetrygen 端到端验证失败"
         return 1
     }
