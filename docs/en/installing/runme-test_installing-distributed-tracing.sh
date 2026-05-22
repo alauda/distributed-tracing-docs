@@ -124,8 +124,8 @@ _test_spm() {
         }
     fi
 
-    # 打印 Jaeger UI URL
-    runme run install-tracing:print-jaeger-url
+    # 输出 Jaeger UI 访问地址
+    log_info "Jaeger UI 访问地址: ${PLATFORM_URL}${JAEGER_BASEPATH}"
 
     log_success "SPM 测试完成"
     return 0
