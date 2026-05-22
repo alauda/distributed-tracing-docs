@@ -113,14 +113,19 @@ _test_spm() {
     }
 
     # 步骤 26: 重新部署 telemetrygen 验证 SPM 指标（文档 Verification 要求）
-    log_info "步骤 26: 重新部署 telemetrygen 验证 SPM"
-    _deploy_telemetrygen "${TRACING_TELEMETRYGEN_TEST_DURATION_2:-130s}" || {
-        log_error "SPM telemetrygen 验证失败"
-        return 1
-    }
+    # --skip-telemetrygen 时跳过：SPM 配置路径已由步骤 19-25 覆盖。
+    if [ "${SKIP_TELEMETRYGEN:-false}" = "true" ]; then
+        log_warn "SKIP_TELEMETRYGEN=true，跳过步骤 26 SPM telemetrygen 验证"
+    else
+        log_info "步骤 26: 重新部署 telemetrygen 验证 SPM"
+        _deploy_telemetrygen "${TRACING_TELEMETRYGEN_TEST_DURATION_2:-130s}" || {
+            log_error "SPM telemetrygen 验证失败"
+            return 1
+        }
+    fi
 
-    # 打印 Jaeger UI URL
-    runme run install-tracing:print-jaeger-url
+    # 输出 Jaeger UI 访问地址
+    log_info "Jaeger UI 访问地址: ${PLATFORM_URL}${JAEGER_BASEPATH}"
 
     log_success "SPM 测试完成"
     return 0
@@ -329,11 +334,17 @@ test_installing_distributed_tracing() {
     }
 
     # 步骤 18: 部署 telemetrygen 生成测试 trace（内含 wait/delete）
-    log_info "步骤 18: 部署 telemetrygen 生成测试 trace"
-    _deploy_telemetrygen "${TRACING_TELEMETRYGEN_TEST_DURATION_1:-30s}" || {
-        log_error "telemetrygen 端到端验证失败"
-        return 1
-    }
+    # --skip-telemetrygen 时跳过：用于 mesh 等仅需安装调用链组件、由
+    # 业务流量产生 trace 而不依赖 telemetrygen 验证的编排场景。
+    if [ "${SKIP_TELEMETRYGEN:-false}" = "true" ]; then
+        log_warn "SKIP_TELEMETRYGEN=true，跳过步骤 18 telemetrygen 端到端验证"
+    else
+        log_info "步骤 18: 部署 telemetrygen 生成测试 trace"
+        _deploy_telemetrygen "${TRACING_TELEMETRYGEN_TEST_DURATION_1:-30s}" || {
+            log_error "telemetrygen 端到端验证失败"
+            return 1
+        }
+    fi
 
     # 步骤 19-26:（可选）Service Performance Monitoring (SPM) 章节
     # SPM 需 ACP monitoring，默认跳过；设置 TRACING_TEST_SPM=true 启用。
