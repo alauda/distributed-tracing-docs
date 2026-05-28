@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Alauda Distributed Tracing 安装文档测试脚本
 # 对应文档: docs/en/installing/installing-distributed-tracing.mdx
-# 覆盖范围: 「Installing Alauda Build of Jaeger v2」与「Deploying the OpenTelemetry
+# 覆盖范围: 「Deploying the Alauda Build of Jaeger v2」与「Deploying the OpenTelemetry
 #           Collector」「Verification」章节；「(Optional) SPM」章节首期不纳入。
 
 set -e
