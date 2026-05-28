@@ -173,10 +173,10 @@ The new Jaeger writes to a separate index family (`acp-<cluster>-jaeger-*`) whil
 
 ### Deploy the new Jaeger v2 instance \{#deploy-the-new-jaeger-v2-instance}
 
-Follow [Installing Alauda Build of Jaeger v2](../installing/installing-distributed-tracing.mdx#installing-alauda-build-of-jaeger-v2) in the Alauda Distributed Tracing installation guide. The new Jaeger v2 instance is deployed in a dedicated namespace (`jaeger-system` by default) so that it does not collide with the legacy `jaeger-prod` instance in `cpaas-system`.
+Follow [Deploying the Alauda Build of Jaeger v2](../installing/installing-distributed-tracing.mdx#deploying-the-alauda-build-of-jaeger-v2) in the Alauda Distributed Tracing installation guide. The new Jaeger v2 instance is deployed in a dedicated namespace (`jaeger-system` by default) so that it does not collide with the legacy `jaeger-prod` instance in `cpaas-system`.
 
 :::warning
-Only follow the *Installing Alauda Build of Jaeger v2* section linked above. **Do not** execute the *Deploying the OpenTelemetry Collector* section of the same installation guide — the application-facing v2 OpenTelemetry Collector was already deployed in `cpaas-system` during [Stage 1 (OpenTelemetry v2 migration)](#migrate-alauda-build-of-opentelemetry-to-v2). Running that section would create a duplicate `otel` Collector in `jaeger-system` that no application talks to.
+Only follow the *Deploying the Alauda Build of Jaeger v2* section linked above. **Do not** execute the *Deploying the OpenTelemetry Collector* section of the same installation guide — the application-facing v2 OpenTelemetry Collector was already deployed in `cpaas-system` during [Stage 1 (OpenTelemetry v2 migration)](#migrate-alauda-build-of-opentelemetry-to-v2). Running that section would create a duplicate `otel` Collector in `jaeger-system` that no application talks to.
 :::
 
 When you reach the variable-setup step, keep the **default index prefix** so that the new Jaeger writes to indices that are clearly separated from the legacy ones:
