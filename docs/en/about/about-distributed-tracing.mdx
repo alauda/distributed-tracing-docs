@@ -40,16 +40,18 @@ For a broader capability overview, see [Features](../features.mdx).
 
 ## Architecture
 
-Alauda Distributed Tracing combines Jaeger v2, Alauda Build of OpenTelemetry v2, and Elasticsearch to collect, store, and visualize trace data on Kubernetes.
+Alauda Distributed Tracing combines Jaeger v2, Alauda Build of OpenTelemetry v2, and Elasticsearch or OpenSearch to collect, store, and visualize trace data on Kubernetes.
 
 The main components are:
 
 - **Alauda Distributed Tracing (Jaeger)**: This component is based on Jaeger v2 and provides the tracing backend.
     - **Jaeger Binary**. The main runtime is built on the OpenTelemetry Collector framework and can run role-specific deployments such as `collector` and `query` to receive, store, search, and visualize trace data.
     - **Jaeger ES Rollover**: This component manages Elasticsearch rollover resources such as templates, aliases, and index rotation so long-running clusters can retain tracing data efficiently.
+    - **jaeger-es-index-cleaner**: This component periodically deletes time-based indices that are older than a configured retention period. It is used with OpenSearch deployments (and with Elasticsearch deployments that do not use ILM) to enforce trace data retention.
 - **<ExternalSiteLink name="opentelemetry" href="/" children="Alauda Build of OpenTelemetry v2" />**: This component is based on the open source OpenTelemetry project and provides a supported distribution for receiving, processing, and exporting telemetry data.
     - **OpenTelemetry Operator**: The Operator deploys and manages Jaeger instances on the cluster and reconciles the resources required for tracing pipelines.
     - **OpenTelemetry Collector**: The Collector is a vendor-neutral component that can be placed in front of Jaeger to receive telemetry, enrich or transform it, and forward it to one or more backends. It is also a common destination for instrumentation libraries that export telemetry data by using open standards such as OTLP.
 - **Elasticsearch**: Elasticsearch stores trace data for search and analysis and serves as the backend storage for Alauda Distributed Tracing.
+- **OpenSearch**: OpenSearch is a community-driven, open source search and analytics suite that can also serve as the backend storage for Alauda Distributed Tracing. Jaeger uses the same storage implementation for OpenSearch as for Elasticsearch.
 
 For a broader architecture overview, see [Architecture](../architecture.mdx).

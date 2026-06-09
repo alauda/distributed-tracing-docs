@@ -4,7 +4,7 @@ weight: 50
 
 # Architecture
 
-**Alauda Distributed Tracing** is based on Jaeger v2 and Alauda Build of OpenTelemetry v2. Jaeger instances are deployed through the OpenTelemetry Operator, and Elasticsearch is used as the backend storage. In this architecture, Jaeger v2 provides the core tracing backend capabilities for data ingestion, query, and visualization.
+**Alauda Distributed Tracing** is based on Jaeger v2 and Alauda Build of OpenTelemetry v2. Jaeger instances are deployed through the OpenTelemetry Operator, and Elasticsearch or OpenSearch is used as the backend storage. In this architecture, Jaeger v2 provides the core tracing backend capabilities for data ingestion, query, and visualization.
 
 **Jaeger v2** is designed to be a versatile and flexible tracing platform. It can be deployed as a single binary that can be configured to perform different **roles** within the Jaeger architecture.
 
@@ -13,6 +13,7 @@ weight: 50
 * **collector**: Receives incoming trace data from applications and writes it into a storage backend.
 * **query**: Serves the APIs and the user interface for querying and visualizing traces.
 * **es-rollover**: Manages Elasticsearch rollover-based index operations for Jaeger. It is used to prepare aliases, indices, and templates for rollover deployments, and can periodically roll the write alias to a new index while updating read aliases.
+* **es-index-cleaner**: Deletes time-based indices that are older than a configured retention period. It matches date-suffixed indices (`<prefix>-jaeger-(span|service|dependencies|sampling)-YYYY-MM-DD`) and removes those past the retention threshold. It is typically used with OpenSearch deployments, which rely on daily indices instead of rollover aliases, to enforce trace data retention.
 
 ## Storage architecture
 

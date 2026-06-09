@@ -1,0 +1,776 @@
+---
+weight: 20
+---
+
+# Installing Alauda Distributed Tracing with OpenSearch
+
+Installing the Alauda Distributed Tracing platform involves the following steps:
+
+1. Installing the Alauda Build of OpenTelemetry v2 Operator
+2. Deploying the Alauda Build of Jaeger v2
+3. Deploying the OpenTelemetry Collector to forward traces to Jaeger
+
+## Installing the Alauda Build of OpenTelemetry v2 Operator \{#installing-the-alauda-build-of-opentelemetry-v2-operator}
+
+The Alauda Build of OpenTelemetry v2 Operator manages the lifecycle of Jaeger v2 and OpenTelemetry Collector instances. You must install this Operator before deploying any tracing components.
+
+### Installing via the web console
+
+Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/installing/install-opentelemetry.html#installing-via-the-web-console" children="Installing via the web console" /> section of the Alauda Build of OpenTelemetry v2 documentation.
+
+### Installing via the CLI
+
+Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/installing/install-opentelemetry.html#installing-via-the-cli" children="Installing via the CLI" /> section of the Alauda Build of OpenTelemetry v2 documentation.
+
+## Deploying the Alauda Build of Jaeger v2 \{#deploying-the-alauda-build-of-jaeger-v2}
+
+Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by the Alauda Build of OpenTelemetry v2 Operator. It uses [OpenSearch](../configuration/storage-backends/opensearch.mdx) as its backend storage and integrates with the Alauda Container Platform authentication system through an OAuth2 Proxy sidecar.
+
+**Prerequisites**
+
+- The Alauda Build of OpenTelemetry v2 Operator is installed.
+- An OpenSearch 3.x instance is available, and you have the endpoint URL, username, and password for it.
+- An active ACP CLI (`kubectl`) session by a cluster administrator with the `cluster-admin` role.
+- The `jq` command-line tool is installed.
+
+**Procedure**
+
+1. Set user-configurable environment variables for connecting to OpenSearch:
+
+    ```bash
+    export OPENSEARCH_ENDPOINT='<OpenSearch endpoint URL>'
+    export OPENSEARCH_USER='<OpenSearch username>'
+    export OPENSEARCH_PASS='<OpenSearch password>'
+    ```
+
+    Replace the placeholder values with your actual OpenSearch credentials.
+
+2. Retrieve platform configuration and Jaeger-related container images from the cluster:
+
+    ```bash {name=install-tracing-opensearch:get-platform-config}
+    export PLATFORM_URL=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.platformURL}')
+    export CLUSTER_NAME=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.clusterName}')
+    export ALB_CLASS_NAME=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.systemAlbIngressClassName}')
+
+    export OIDC_ISSUER=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.oidcIssuer}')
+    OIDC_CLIENT_SECRET_REF=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.oidcClientSecretRef}')
+    if [ -n "$OIDC_CLIENT_SECRET_REF" ]; then
+      SYSTEM_NAMESPACE=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.systemNamespace}')
+      export OIDC_CLIENT_ID=$(kubectl -n"$SYSTEM_NAMESPACE" get secret "$OIDC_CLIENT_SECRET_REF" -o go-template='{{index .data "client-id"}}' | base64 -d)
+      export OIDC_CLIENT_SECRET=$(kubectl -n"$SYSTEM_NAMESPACE" get secret "$OIDC_CLIENT_SECRET_REF" -o go-template='{{index .data "client-secret"}}' | base64 -d)
+    else
+      export OIDC_CLIENT_ID=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.oidcClientID}')
+      export OIDC_CLIENT_SECRET=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.oidcClientSecret}')
+    fi
+
+    JAEGER_RELATED_IMAGES=$(kubectl get csv -n opentelemetry-operator2 \
+      -l 'operators.coreos.com/opentelemetry-operator2.opentelemetry-operator2=' \
+      -o jsonpath='{.items[0].spec.relatedImages}')
+    export JAEGER_IMAGE=$(echo "$JAEGER_RELATED_IMAGES" | jq -r '.[] | select(.name=="component.jaeger") | .image')
+    export JAEGER_ES_INDEX_CLEANER_IMAGE=$(echo "$JAEGER_RELATED_IMAGES" | jq -r '.[] | select(.name=="component.jaeger-es-index-cleaner") | .image')
+    export JOAUTH2_PROXY_IMAGE=$(echo "$JAEGER_RELATED_IMAGES" | jq -r '.[] | select(.name=="component.oauth2-proxy") | .image')
+    ```
+
+    :::note
+    Verify that commands completes without errors.
+    :::
+
+3. Set default environment variables. You can adjust these values to match your deployment requirements:
+
+    ```bash {name=install-tracing-opensearch:set-jaeger-defaults}
+    # Namespace for the Jaeger instance
+    export JAEGER_NS="jaeger-system"
+    # Name of the Jaeger instance
+    export JAEGER_INSTANCE_NAME="jaeger"
+    # Index prefix for Jaeger data
+    export JAEGER_ES_INDEX_PREFIX="acp-${CLUSTER_NAME}"
+    # Maximum age of spans the Jaeger query service will search. Keep aligned with the index-cleaner retention.
+    export JAEGER_MAX_SPAN_AGE="168h"
+    # Base path for the Jaeger UI
+    export JAEGER_BASEPATH="/clusters/${CLUSTER_NAME}/jaeger"
+    ```
+
+4. Create the Jaeger namespace and OpenSearch credentials Secret:
+
+    ```bash {name=install-tracing-opensearch:create-jaeger-ns-and-opensearch-secret}
+    kubectl get namespace ${JAEGER_NS} &> /dev/null || kubectl create namespace ${JAEGER_NS}
+
+    kubectl create secret generic opensearch-credentials \
+      --namespace=${JAEGER_NS} \
+      --from-literal=OPENSEARCH_USER=${OPENSEARCH_USER} \
+      --from-literal=OPENSEARCH_PASS=${OPENSEARCH_PASS} \
+      --dry-run=client -o yaml | kubectl apply -f -
+    ```
+
+    Verify that the Secret was created:
+
+    ```bash {name=install-tracing-opensearch:verify-opensearch-secret}
+    kubectl get secret opensearch-credentials -n ${JAEGER_NS}
+    ```
+
+5. Create a Secret for the OAuth2 Proxy, which is used to integrate the Jaeger UI with the Alauda Container Platform authentication:
+
+    ```bash {name=install-tracing-opensearch:create-oauth2-proxy-secret}
+    # Generate a cookie secret for the OAuth2 Proxy:
+    OAUTH2_PROXY_COOKIE_SECRET=$(dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | tr -d -- '\n' | tr -- '+/' '-_')
+    # Create the Secret:
+    kubectl create secret generic ${JAEGER_INSTANCE_NAME}-oauth2-proxy \
+      --namespace=${JAEGER_NS} \
+      --from-literal=OAUTH2_PROXY_CLIENT_SECRET=${OIDC_CLIENT_SECRET} \
+      --from-literal=OAUTH2_PROXY_COOKIE_SECRET=${OAUTH2_PROXY_COOKIE_SECRET} \
+      --dry-run=client -o yaml | kubectl apply -f -
+    ```
+
+6. Create a file named `jaeger.yaml` with the following content:
+
+    ```yaml title="jaeger.yaml" {name=install-tracing-opensearch:jaeger-yaml}
+    apiVersion: opentelemetry.io/v1beta1
+    kind: OpenTelemetryCollector
+    metadata:
+      labels:
+        prometheus: kube-prometheus # [!code callout]
+      name: ${JAEGER_INSTANCE_NAME}
+      namespace: ${JAEGER_NS}
+    spec:
+      image: "${JAEGER_IMAGE}" # [!code callout]
+      mode: deployment
+      replicas: 1
+
+      resources: # [!code callout]
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "2"
+          memory: 2Gi
+
+      ports:
+        - name: oauth2-proxy
+          port: 4180
+        - name: jaeger-grpc
+          port: 16685
+
+      observability:
+        metrics:
+          enableMetrics: true # [!code callout]
+
+      volumes:
+        - name: opensearch-credentials
+          secret:
+            secretName: opensearch-credentials
+            items:
+              - key: OPENSEARCH_PASS
+                path: pass
+        - name: oauth2-proxy-secrets
+          secret:
+            secretName: ${JAEGER_INSTANCE_NAME}-oauth2-proxy
+            items:
+              - key: OAUTH2_PROXY_CLIENT_SECRET
+                path: client-secret
+              - key: OAUTH2_PROXY_COOKIE_SECRET
+                path: cookie-secret
+      volumeMounts:
+        - name: opensearch-credentials
+          mountPath: /etc/jaeger/opensearch-credentials
+          readOnly: true
+
+      config:
+        receivers:
+          otlp:
+            protocols:
+              grpc:
+                endpoint: "0.0.0.0:4317"
+              http:
+                endpoint: "0.0.0.0:4318"
+
+        processors:
+          batch: {}
+          memory_limiter:
+            check_interval: 1s
+            limit_percentage: 80
+            spike_limit_percentage: 20
+
+        exporters:
+          debug: {}
+          jaeger_storage_exporter:
+            trace_storage: opensearch_storage
+
+        extensions:
+          healthcheckv2:
+            use_v2: true
+            http:
+              endpoint: "0.0.0.0:13133"
+
+          jaeger_storage: # [!code callout]
+            backends:
+              opensearch_storage:
+                opensearch: # [!code callout]
+                  server_urls:
+                    - "${OPENSEARCH_ENDPOINT}"
+                  auth:
+                    basic:
+                      username: "${OPENSEARCH_USER}"
+                      password_file: /etc/jaeger/opensearch-credentials/pass
+                  tls:
+                    insecure_skip_verify: true
+                  service_cache_ttl: 12h # [!code callout]
+                  max_span_age: "${JAEGER_MAX_SPAN_AGE}" # [!code callout]
+                  indices:
+                    index_prefix: "${JAEGER_ES_INDEX_PREFIX}" # [!code callout]
+                    spans:
+                      date_layout: "2006-01-02"
+                      rollover_frequency: "day" # [!code callout]
+                      shards: 5
+                      replicas: 1
+                    services:
+                      date_layout: "2006-01-02"
+                      rollover_frequency: "day"
+                      shards: 5
+                      replicas: 1
+                    dependencies:
+                      date_layout: "2006-01-02"
+                      rollover_frequency: "day"
+                      shards: 5
+                      replicas: 1
+                    sampling:
+                      date_layout: "2006-01-02"
+                      rollover_frequency: "day"
+                      shards: 5
+                      replicas: 1
+
+          jaeger_query: # [!code callout]
+            storage:
+              traces: opensearch_storage
+            ui:
+              config_file: ""
+            base_path: "${JAEGER_BASEPATH}"
+            http:
+              endpoint: 0.0.0.0:16686
+
+        service:
+          extensions: [healthcheckv2, jaeger_storage, jaeger_query]
+          pipelines:
+            traces:
+              receivers: [otlp]
+              processors: [memory_limiter, batch]
+              exporters: [debug, jaeger_storage_exporter]
+          telemetry:
+            resource:
+              service.name: jaeger
+            metrics:
+              level: detailed
+              readers:
+                - pull:
+                    exporter:
+                      prometheus:
+                        host: "0.0.0.0"
+                        port: 8888
+                        without_scope_info: true
+                        without_type_suffix: true
+                        without_units: true
+            logs:
+              level: info
+
+      additionalContainers: # [!code callout]
+        - name: oauth2-proxy
+          image: ${JOAUTH2_PROXY_IMAGE}
+          args:
+            - --http-address=0.0.0.0:4180
+            - --upstream=http://127.0.0.1:16686
+            - --proxy-prefix=${JAEGER_BASEPATH}/oauth2
+            - --redirect-url=${PLATFORM_URL}${JAEGER_BASEPATH}/oauth2/callback
+            - --provider=oidc
+            - --oidc-issuer-url=${OIDC_ISSUER}
+            - --scope=openid profile email groups ext
+            - --email-domain=*
+            - --code-challenge-method=S256
+            - --insecure-oidc-allow-unverified-email=true
+            - --cookie-secure=false
+            - --skip-provider-button=true
+            - --ssl-insecure-skip-verify=true
+            - --skip-jwt-bearer-tokens=true
+            - --client-id=${OIDC_CLIENT_ID}
+            - --client-secret-file=/etc/oauth2-proxy/client-secret
+            - --cookie-secret-file=/etc/oauth2-proxy/cookie-secret
+          resources: # [!code callout]
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: oauth2-proxy-secrets
+              mountPath: /etc/oauth2-proxy
+              readOnly: true
+          ports:
+            - containerPort: 4180
+              name: oauth2-proxy
+              protocol: TCP
+    ```
+
+    <Callouts>
+      1. The `prometheus: kube-prometheus` label is inherited by the auto-created `ServiceMonitor` resource, enabling ACP Prometheus to scrape Jaeger metrics.
+      2. The Jaeger v2 container image. This is not the default OpenTelemetry Collector image; it is a custom Jaeger binary built on the OpenTelemetry Collector framework.
+      3. Resource requests and limits for the Jaeger container. Adjust based on your expected trace volume; higher throughput environments may require more CPU and memory.
+      4. Enables the Prometheus metrics endpoint for the Jaeger instance.
+      5. The `jaeger_storage` extension configures the [OpenSearch backend](../configuration/storage-backends/opensearch.mdx#configuration) for storing trace data.
+      6. The `opensearch` driver selects the OpenSearch storage implementation. Jaeger uses the same implementation for OpenSearch as for Elasticsearch.
+      7. `service_cache_ttl` controls how long the service name cache is kept. The default is `12h`. If the index retention is short, reduce this value to ensure the Jaeger UI can discover services promptly.
+      8. `max_span_age` is the maximum age of spans the query service will search, set here from `JAEGER_MAX_SPAN_AGE`. Keep it aligned with the `jaeger-es-index-cleaner` retention so the UI does not query indices that have already been deleted.
+      9. `index_prefix` must match the `INDEX_PREFIX` used by the `jaeger-es-index-cleaner` CronJob, otherwise the cleaner cannot find the indices to delete. For more details on shards and replicas tuning, see [Shards and Replicas](../configuration/storage-backends/opensearch.mdx#shards-and-replicas).
+      10. `rollover_frequency: day` together with `date_layout` produces daily indices such as `${JAEGER_ES_INDEX_PREFIX}-jaeger-span-YYYY-MM-DD`. These plain daily indices (no rollover alias) are what the `jaeger-es-index-cleaner` matches by date suffix.
+      11. The `jaeger_query` extension serves the Jaeger Query API and the Jaeger UI.
+      12. The `additionalContainers` section defines the OAuth2 Proxy sidecar, which handles authentication for the Jaeger UI by integrating with the Alauda Container Platform Dex identity provider.
+      13. Resource requests and limits for the OAuth2 Proxy sidecar. This container has low resource requirements since it only proxies authentication requests.
+    </Callouts>
+
+7. Render the manifest with `envsubst` and apply the configuration:
+
+    ```bash {name=install-tracing-opensearch:apply-jaeger}
+    envsubst < jaeger.yaml | kubectl apply -f -
+    ```
+
+8. Wait for the Jaeger Pod to be ready:
+
+    ```bash {name=install-tracing-opensearch:wait-jaeger-rollout}
+    kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector \
+      -n ${JAEGER_NS} --timeout=180s
+    ```
+
+9. Deploy the `jaeger-es-index-cleaner` to periodically remove expired indices.
+
+    :::info Why not `jaeger-es-rollover init`?
+    The `init` subcommand of the `jaeger-es-rollover` tool calls the Elasticsearch `_ilm/policy/...` endpoint to verify that an ILM policy exists, but OpenSearch uses `_plugins/_ism/policies/...` instead. The two are not compatible, so `init` fails on OpenSearch (see [jaegertracing/jaeger#7121](https://github.com/jaegertracing/jaeger/issues/7121)).
+
+    This guide uses **daily indices plus `jaeger-es-index-cleaner`**, which does **not** rely on rollover aliases and therefore does not require `jaeger-es-rollover init`.
+    :::
+
+    **How it works**
+
+    The OpenSearch backend writes daily indices such as `acp-<cluster>-jaeger-span-2026-04-22`. The `jaeger-es-index-cleaner` matches indices named `<prefix>-jaeger-(span|service|dependencies|sampling)-YYYY-MM-DD`, compares the date suffix with "today minus N days", and deletes the indices that are older than the retention period.
+
+    Set the index-cleaner environment variables:
+
+    ```bash {name=install-tracing-opensearch:set-index-cleaner-defaults}
+    # Index retention in days: indices older than this are deleted
+    export JAEGER_INDEX_RETENTION_DAYS="7"
+    # Daily execution time (UTC). For example, "30 2 * * *" means 02:30 UTC.
+    export JAEGER_CLEANER_SCHEDULE="30 2 * * *"
+    ```
+
+    :::info
+    **Relationship between the retention parameter and Jaeger**
+
+    To prevent the Jaeger UI from querying indices that the cleaner has just deleted, keep `JAEGER_INDEX_RETENTION_DAYS` (the cleaner retention) consistent with Jaeger's `max_span_age` (`JAEGER_MAX_SPAN_AGE`). For example, set both to 7 days (`168h`).
+    :::
+
+10. Create `jaeger-index-cleaner.yaml` to deploy the index-cleaner as a `CronJob`:
+
+    ```yaml title="jaeger-index-cleaner.yaml" {name=install-tracing-opensearch:index-cleaner-yaml}
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: jaeger-es-index-cleaner
+      namespace: ${JAEGER_NS}
+    spec:
+      schedule: "${JAEGER_CLEANER_SCHEDULE}" # [!code callout]
+      concurrencyPolicy: Forbid # [!code callout]
+      successfulJobsHistoryLimit: 3
+      failedJobsHistoryLimit: 3
+      jobTemplate:
+        spec:
+          backoffLimit: 3
+          template:
+            spec:
+              restartPolicy: Never
+              containers:
+                - name: jaeger-es-index-cleaner
+                  image: "${JAEGER_ES_INDEX_CLEANER_IMAGE}"
+                  args: # [!code callout]
+                    - "${JAEGER_INDEX_RETENTION_DAYS}"
+                    - "${OPENSEARCH_ENDPOINT}"
+                  env:
+                    - name: INDEX_PREFIX # [!code callout]
+                      value: "${JAEGER_ES_INDEX_PREFIX}"
+                    - name: INDEX_DATE_SEPARATOR
+                      value: "-"
+                    - name: ES_TLS_ENABLED
+                      value: "true"
+                    - name: ES_TLS_SKIP_HOST_VERIFY # [!code callout]
+                      value: "true"
+                    - name: ES_USERNAME
+                      valueFrom:
+                        secretKeyRef:
+                          name: opensearch-credentials
+                          key: OPENSEARCH_USER
+                    - name: ES_PASSWORD
+                      valueFrom:
+                        secretKeyRef:
+                          name: opensearch-credentials
+                          key: OPENSEARCH_PASS
+                  resources:
+                    requests:
+                      cpu: 50m
+                      memory: 64Mi
+                    limits:
+                      cpu: 500m
+                      memory: 256Mi
+    ```
+
+    <Callouts>
+      1. `schedule` uses a standard Cron expression (UTC). Schedule it during off-peak hours; once per day is usually sufficient.
+      2. `concurrencyPolicy: Forbid` ensures a new Job is not started while the previous cleanup is still running, avoiding concurrent deletions that could briefly stress OpenSearch.
+      3. `args` are the positional arguments of `jaeger-es-index-cleaner`: the first is the **retention in days**, the second is the OpenSearch endpoint. `ROLLOVER=true` is intentionally not set, so the default daily-index matching mode is used.
+      4. `INDEX_PREFIX` must exactly match the Jaeger `indices.index_prefix` (here `acp-<cluster>`), otherwise the cleaner cannot find the corresponding indices.
+      5. `ES_TLS_SKIP_HOST_VERIFY=true` corresponds to the Jaeger-side `insecure_skip_verify: true` TLS policy. If you instead harden TLS with a self-signed CA, mount the CA into the container and set `ES_TLS_CA_FILE` to its path.
+    </Callouts>
+
+    Render and deploy the CronJob:
+
+    ```bash {name=install-tracing-opensearch:apply-index-cleaner}
+    envsubst < jaeger-index-cleaner.yaml | kubectl apply -f -
+    ```
+
+11. Label the namespace and create an Ingress to expose the Jaeger UI:
+
+    ```bash {name=install-tracing-opensearch:label-jaeger-ns}
+    kubectl label namespace ${JAEGER_NS} cpaas.io/project=cpaas-system --overwrite
+    ```
+
+    ```bash {name=install-tracing-opensearch:create-jaeger-ingress}
+    kubectl apply -n ${JAEGER_NS} -f - <<EOF
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: ${JAEGER_INSTANCE_NAME}
+      annotations:
+        nginx.ingress.kubernetes.io/enable-cors: "true"
+    spec:
+      ingressClassName: ${ALB_CLASS_NAME}
+      rules:
+        - http:
+            paths:
+              - path: ${JAEGER_BASEPATH}
+                pathType: ImplementationSpecific
+                backend:
+                  service:
+                    name: ${JAEGER_INSTANCE_NAME}-collector
+                    port:
+                      number: 4180
+    EOF
+    ```
+
+    Wait for the Ingress to be ready:
+
+    ```bash {name=install-tracing-opensearch:wait-jaeger-ingress}
+    kubectl wait --for=jsonpath='{.status.loadBalancer.ingress}' ingress/${JAEGER_INSTANCE_NAME} \
+      -n ${JAEGER_NS} --timeout=180s
+    ```
+
+**Verification**
+
+Access the Jaeger UI at `<platform-url>/clusters/<cluster-name>/jaeger`, where `<platform-url>` is the Alauda Container Platform URL and `<cluster-name>` is the name of your cluster. 
+
+Run the following command to print the Jaeger UI URL:
+
+```bash {name=install-tracing-opensearch:print-jaeger-url}
+echo "Jaeger UI: ${PLATFORM_URL}${JAEGER_BASEPATH}"
+```
+
+## Deploying the OpenTelemetry Collector \{#deploying-the-opentelemetry-collector}
+
+After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receive trace data from instrumented applications and forward it to Jaeger.
+
+1. Create a file named `otel-collector.yaml` with the following content:
+
+    ```yaml title="otel-collector.yaml" {name=install-tracing-opensearch:otel-collector-yaml}
+    apiVersion: opentelemetry.io/v1beta1
+    kind: OpenTelemetryCollector
+    metadata:
+      labels:
+        prometheus: kube-prometheus # [!code callout]
+      name: otel
+      namespace: ${JAEGER_NS}
+    spec:
+      mode: deployment
+      replicas: 1
+      resources: # [!code callout]
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "2"
+          memory: 2Gi
+      observability:
+        metrics:
+          enableMetrics: true # [!code callout]
+      config:
+        receivers:
+          otlp: # [!code callout]
+            protocols:
+              grpc:
+                endpoint: 0.0.0.0:4317
+              http:
+                endpoint: 0.0.0.0:4318
+          zipkin: {}
+        processors:
+          batch: {}
+          memory_limiter:
+            check_interval: 1s
+            limit_percentage: 80
+            spike_limit_percentage: 20
+        exporters:
+          debug: {}
+          otlp/traces: # [!code callout]
+            endpoint: "${JAEGER_INSTANCE_NAME}-collector.${JAEGER_NS}.svc.cluster.local:4317"
+            tls:
+              insecure: true
+          prometheus:
+            add_metric_suffixes: false # Jaeger expects standard OTel metric names without _total suffixes
+            endpoint: "0.0.0.0:8889"
+            resource_to_telemetry_conversion:
+              enabled: true # by default resource attributes are dropped
+        service:
+          pipelines:
+            traces:
+              receivers: [otlp, zipkin]
+              processors: [memory_limiter, batch]
+              exporters: [debug, otlp/traces] # [!code callout]
+            metrics:
+              receivers: [otlp]
+              processors: [memory_limiter, batch]
+              exporters: [debug, prometheus]
+          telemetry:
+            metrics:
+              readers:
+              - pull:
+                  exporter:
+                    prometheus:
+                      host: 0.0.0.0
+                      port: 8888
+                      without_scope_info: true
+                      without_type_suffix: true
+                      without_units: true
+    ```
+
+    <Callouts>
+      1. The `prometheus: kube-prometheus` label enables ACP Prometheus to scrape the Collector metrics via the auto-created `ServiceMonitor`.
+      2. Resource requests and limits for the Collector container. Adjust based on your expected trace throughput.
+      3. Enables the Operator to automatically create `ServiceMonitor` resources for the Collector's metrics endpoint.
+      4. The OTLP receiver accepts trace data over gRPC (port `4317`) and HTTP (port `4318`) from instrumented applications.
+      5. The `otlp/traces` exporter forwards received traces to the Jaeger collector service. The endpoint is derived from the Jaeger instance name and namespace.
+      6. The trace pipeline receives data via OTLP and Zipkin, processes it through `memory_limiter` and `batch`, and exports to both the `debug` exporter (for logging) and `otlp/traces` (for forwarding to Jaeger).
+    </Callouts>
+
+2. Render the manifest with `envsubst` and apply the configuration:
+
+    ```bash {name=install-tracing-opensearch:apply-otel-collector}
+    envsubst < otel-collector.yaml | kubectl apply -f -
+    ```
+
+3. Wait for the Collector pod to be ready:
+
+    ```bash {name=install-tracing-opensearch:wait-otel-collector-rollout}
+    kubectl rollout status deployment/otel-collector \
+      -n ${JAEGER_NS} --timeout=180s
+    ```
+
+## Verification \{#verification}
+
+After installing all components, verify the end-to-end tracing pipeline by generating sample trace data.
+
+1. Deploy `telemetrygen` as a test client to generate sample traces:
+
+    ```bash {name=install-tracing-opensearch:deploy-telemetrygen}
+    kubectl apply -f - <<EOF
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: telemetrygen
+      namespace: ${JAEGER_NS}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: telemetrygen
+          image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+          args:
+            - traces
+            - --otlp-endpoint=otel-collector.${JAEGER_NS}.svc.cluster.local:4317
+            - --otlp-insecure
+            - --duration=150s
+            - --interval=5s
+            - --child-spans=3
+            - --rate=2
+            - --service=telemetrygen
+            - --workers=1
+    EOF
+    # Wait for telemetrygen to complete, then clean up the test Pod
+    kubectl wait -n ${JAEGER_NS} --for=jsonpath='{.status.phase}'=Succeeded pod/telemetrygen --timeout=10m
+    kubectl delete pod -n ${JAEGER_NS} telemetrygen
+    ```
+
+    :::note
+    The `--otlp-endpoint` must point to the OpenTelemetry Collector service deployed in the previous step.
+    :::
+
+2. Open the Jaeger UI at `<platform-url>/clusters/<cluster-name>/jaeger`. 
+
+    Select the `telemetrygen` service from the **Service** dropdown and click **Find Traces** to verify that the generated traces are visible. 
+
+    Run the following command to print the Jaeger UI URL:
+
+    ```bash
+    echo "Jaeger UI: ${PLATFORM_URL}${JAEGER_BASEPATH}"
+    ```
+
+## (Optional) Enabling Service Performance Monitoring (SPM) \{#optional-enabling-service-performance-monitoring-spm}
+
+Service Performance Monitoring (SPM) surfaces in the Jaeger UI as the **Monitor** tab, aggregating span data to produce RED (Request, Error, Duration) metrics. This enables you to identify performance issues without requiring prior knowledge of service or operation names. For more details, see [Service Performance Monitoring (SPM)](../configuration/spm.mdx).
+
+Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTelemetry Collector, and configuring a PromQL-compatible metrics backend in Jaeger.
+
+**Prerequisites**
+
+- Jaeger v2 and the OpenTelemetry Collector are deployed (all previous steps completed).
+- ACP monitoring is available in the cluster.
+
+**Procedure**
+
+1. Retrieve monitoring endpoint and credentials from the cluster:
+
+    ```bash {name=install-tracing-opensearch-spm:get-monitoring-config}
+    export MONITORING_URL=$(kubectl get feature monitoring -o jsonpath='{.spec.accessInfo.database.address}')
+    MONITORING_SECRET_NAME=$(kubectl get feature monitoring -o jsonpath='{.spec.accessInfo.database.basicAuth.secretName}')
+
+    export MONITORING_USERNAME=$(kubectl -ncpaas-system get secret "$MONITORING_SECRET_NAME" -o jsonpath="{.data.username}" | base64 -d)
+    export MONITORING_PASSWORD=$(kubectl -ncpaas-system get secret "$MONITORING_SECRET_NAME" -o jsonpath="{.data.password}" | base64 -d)
+    ```
+
+2. Create a Secret for monitoring credentials:
+
+    ```bash {name=install-tracing-opensearch-spm:create-monitoring-secret}
+    kubectl create secret generic monitoring-credentials \
+      --namespace=${JAEGER_NS} \
+      --from-literal=username=${MONITORING_USERNAME} \
+      --from-literal=password=${MONITORING_PASSWORD} \
+      --dry-run=client -o yaml | kubectl apply -f -
+    ```
+
+3. Patch the OpenTelemetry Collector to enable the SpanMetrics Connector. This adds a `spanmetrics` connector that generates RED metrics from spans and exports them via a Prometheus exporter:
+
+    ```bash {name=install-tracing-opensearch-spm:patch-otel-collector}
+    kubectl patch opentelemetrycollector otel -n ${JAEGER_NS} --type=merge -p '
+    spec:
+      config:
+        connectors:
+          spanmetrics: {}
+        service:
+          pipelines:
+            traces:
+              exporters: [debug, otlp/traces, spanmetrics]
+            metrics/spanmetrics:
+              receivers: [spanmetrics]
+              exporters: [prometheus]
+    '
+    ```
+
+    Wait for the Collector to restart:
+
+    ```bash {name=install-tracing-opensearch-spm:wait-otel-collector-rollout}
+    kubectl rollout status deployment/otel-collector \
+      -n ${JAEGER_NS} --timeout=180s
+    ```
+
+4. Create a file named `jaeger-spm-patch.yaml` with the following content. This patch adds a PromQL metrics backend to Jaeger and enables the Monitor tab:
+
+    ```yaml title="jaeger-spm-patch.yaml" {name=install-tracing-opensearch-spm:jaeger-spm-patch-yaml}
+    spec:
+      volumes:
+        - name: opensearch-credentials
+          secret:
+            secretName: opensearch-credentials
+            items:
+              - key: OPENSEARCH_PASS
+                path: pass
+        - name: oauth2-proxy-secrets
+          secret:
+            secretName: ${JAEGER_INSTANCE_NAME}-oauth2-proxy
+            items:
+              - key: OAUTH2_PROXY_CLIENT_SECRET
+                path: client-secret
+              - key: OAUTH2_PROXY_COOKIE_SECRET
+                path: cookie-secret
+        - name: monitoring-credentials # [!code callout]
+          secret:
+            secretName: monitoring-credentials
+            items:
+              - key: username
+                path: user
+              - key: password
+                path: pass
+      volumeMounts:
+        - name: opensearch-credentials
+          mountPath: /etc/jaeger/opensearch-credentials
+          readOnly: true
+        - name: monitoring-credentials # [!code callout]
+          mountPath: /etc/jaeger/monitoring-credentials
+          readOnly: true
+      config:
+        extensions:
+          basicauth/monitoring: # [!code callout]
+            client_auth:
+              username_file: /etc/jaeger/monitoring-credentials/user
+              password_file: /etc/jaeger/monitoring-credentials/pass
+          jaeger_storage:
+            metric_backends: # [!code callout]
+              monitoring_metrics_storage:
+                prometheus:
+                  endpoint: ${MONITORING_URL}
+                  tls:
+                    insecure_skip_verify: true
+                  auth:
+                    authenticator: basicauth/monitoring
+          jaeger_query:
+            storage:
+              metrics: monitoring_metrics_storage # [!code callout]
+        service:
+          extensions: [basicauth/monitoring, healthcheckv2, jaeger_storage, jaeger_query] # [!code callout]
+    ```
+
+    <Callouts>
+      1. The `monitoring-credentials` volume mounts the monitoring basic-auth credentials into the Jaeger container.
+      2. The `monitoring-credentials` volumeMount makes the credentials available at `/etc/jaeger/monitoring-credentials/`.
+      3. The `basicauth/monitoring` extension provides basic authentication for the monitoring metrics endpoint.
+      4. The `metric_backends` section configures the PromQL-compatible metrics storage that Jaeger queries for SPM data.
+      5. Reference the metrics store in the `jaeger_query` extension.
+      6. The `basicauth/monitoring` extension must be added to the `service.extensions` list to be active.
+    </Callouts>
+
+    :::warning
+    The `volumes`, `volumeMounts`, and `service.extensions` fields are arrays. A merge patch replaces arrays entirely rather than appending to them. The patch file above includes all existing entries alongside the new ones to prevent data loss.
+    :::
+
+5. Apply the patch:
+
+    ```bash {name=install-tracing-opensearch-spm:apply-jaeger-patch}
+    kubectl patch opentelemetrycollector ${JAEGER_INSTANCE_NAME} -n ${JAEGER_NS} \
+      --type=merge -p "$(envsubst < jaeger-spm-patch.yaml)"
+    ```
+
+    Wait for Jaeger to restart:
+
+    ```bash {name=install-tracing-opensearch-spm:wait-jaeger-rollout}
+    kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector \
+      -n ${JAEGER_NS} --timeout=180s
+    ```
+
+**Verification**
+
+After enabling SPM, you can verify it by deploying the `telemetrygen` test client as described in the [Verification](#verification) section above. 
+
+Once traces are generated, navigate to the **Monitor** tab in the Jaeger UI to view the aggregated RED metrics for the `telemetrygen` service.
+
+## Uninstalling
+
+To remove the Alauda Distributed Tracing components from your cluster, follow [Uninstalling Alauda Distributed Tracing](../uninstalling/uninstalling-distributed-tracing.mdx).

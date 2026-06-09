@@ -2,7 +2,7 @@
 weight: 10
 ---
 
-# Installing Alauda Distributed Tracing
+# Installing Alauda Distributed Tracing with Elasticsearch
 
 Installing the Alauda Distributed Tracing platform involves the following steps:
 
@@ -24,7 +24,7 @@ Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/ins
 
 ## Deploying the Alauda Build of Jaeger v2 \{#deploying-the-alauda-build-of-jaeger-v2}
 
-Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by the Alauda Build of OpenTelemetry v2 Operator. It uses Elasticsearch as its backend storage and integrates with the Alauda Container Platform authentication system through an OAuth2 Proxy sidecar.
+Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by the Alauda Build of OpenTelemetry v2 Operator. It uses a [backend storage](../configuration/storage-backends/index.mdx) and integrates with the Alauda Container Platform authentication system through an OAuth2 Proxy sidecar.
 
 **Prerequisites**
 
@@ -47,7 +47,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
 2. Retrieve platform configuration and Jaeger-related container images from the cluster:
 
-    ```bash {name=install-tracing:get-platform-config}
+    ```bash {name=install-tracing-elasticsearch:get-platform-config}
     export PLATFORM_URL=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.platformURL}')
     export CLUSTER_NAME=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.clusterName}')
     export ALB_CLASS_NAME=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.systemAlbIngressClassName}')
@@ -77,7 +77,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
 3. Set default environment variables. You can adjust these values to match your deployment requirements:
 
-    ```bash {name=install-tracing:set-jaeger-defaults}
+    ```bash {name=install-tracing-elasticsearch:set-jaeger-defaults}
     # Namespace for the Jaeger instance
     export JAEGER_NS="jaeger-system"
     # Name of the Jaeger instance
@@ -90,7 +90,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
 4. Create the Jaeger namespace and Elasticsearch credentials Secret:
 
-    ```bash {name=install-tracing:create-jaeger-ns-and-es-secret}
+    ```bash {name=install-tracing-elasticsearch:create-jaeger-ns-and-es-secret}
     kubectl get namespace ${JAEGER_NS} &> /dev/null || kubectl create namespace ${JAEGER_NS}
 
     kubectl create secret generic es-credentials \
@@ -102,13 +102,13 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
     Verify that the Secret was created:
 
-    ```bash {name=install-tracing:verify-es-secret}
+    ```bash {name=install-tracing-elasticsearch:verify-es-secret}
     kubectl get secret es-credentials -n ${JAEGER_NS}
     ```
 
 5. Create an [ILM (Index Lifecycle Management) Policy](../configuration/storage-backends/elasticsearch.mdx#ilm-support) in Elasticsearch. Jaeger uses ILM to manage index rollover and retention:
 
-    ```bash {name=install-tracing:create-ilm-policy}
+    ```bash {name=install-tracing-elasticsearch:create-ilm-policy}
     curl -k -u "${ES_USER}:${ES_PASS}" -X PUT \
       "${ES_ENDPOINT}/_ilm/policy/jaeger-ilm-policy" \
       -H 'Content-Type: application/json' \
@@ -148,7 +148,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
     Verify the ILM Policy:
 
-    ```bash {name=install-tracing:verify-ilm-policy}
+    ```bash {name=install-tracing-elasticsearch:verify-ilm-policy}
     curl -k -u "${ES_USER}:${ES_PASS}" "${ES_ENDPOINT}/_ilm/policy/jaeger-ilm-policy?pretty"
     ```
 
@@ -156,7 +156,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
 6. [Initialize](../configuration/storage-backends/elasticsearch.mdx#index-rollover) index aliases and templates using the `jaeger-es-rollover` tool. This prepares Elasticsearch for Jaeger data storage:
 
-    ```bash {name=install-tracing:create-rollover-init-job}
+    ```bash {name=install-tracing-elasticsearch:create-rollover-init-job}
     kubectl apply -n ${JAEGER_NS} -f - <<EOF
     apiVersion: batch/v1
     kind: Job
@@ -197,7 +197,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
     Wait for the Job to complete, then verify that the index templates and aliases were created:
 
-    ```bash {name=install-tracing:verify-rollover-init}
+    ```bash {name=install-tracing-elasticsearch:verify-rollover-init}
     kubectl wait --for=condition=complete job/jaeger-es-rollover-init \
       -n ${JAEGER_NS} --timeout=120s
 
@@ -217,13 +217,13 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
 7. Clean up the initialization Job after it completes:
 
-    ```bash {name=install-tracing:delete-rollover-init-job}
+    ```bash {name=install-tracing-elasticsearch:delete-rollover-init-job}
     kubectl delete job jaeger-es-rollover-init -n ${JAEGER_NS}
     ```
 
 8. Create a Secret for the OAuth2 Proxy, which is used to integrate the Jaeger UI with the Alauda Container Platform authentication:
 
-    ```bash {name=install-tracing:create-oauth2-proxy-secret}
+    ```bash {name=install-tracing-elasticsearch:create-oauth2-proxy-secret}
     # Generate a cookie secret for the OAuth2 Proxy:
     OAUTH2_PROXY_COOKIE_SECRET=$(dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64 | tr -d -- '\n' | tr -- '+/' '-_')
     # Create the Secret:
@@ -236,7 +236,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
 9. Create a file named `jaeger.yaml` with the following content:
 
-    ```yaml title="jaeger.yaml" {name=install-tracing:jaeger-yaml}
+    ```yaml title="jaeger.yaml" {name=install-tracing-elasticsearch:jaeger-yaml}
     apiVersion: opentelemetry.io/v1beta1
     kind: OpenTelemetryCollector
     metadata:
@@ -432,24 +432,24 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
 10. Render the manifest with `envsubst` and apply the configuration:
 
-    ```bash {name=install-tracing:apply-jaeger}
+    ```bash {name=install-tracing-elasticsearch:apply-jaeger}
     envsubst < jaeger.yaml | kubectl apply -f -
     ```
 
 11. Wait for the Jaeger Pod to be ready:
 
-    ```bash {name=install-tracing:wait-jaeger-rollout}
+    ```bash {name=install-tracing-elasticsearch:wait-jaeger-rollout}
     kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector \
       -n ${JAEGER_NS} --timeout=180s
     ```
 
 12. Label the namespace and create an Ingress to expose the Jaeger UI:
 
-    ```bash {name=install-tracing:label-jaeger-ns}
+    ```bash {name=install-tracing-elasticsearch:label-jaeger-ns}
     kubectl label namespace ${JAEGER_NS} cpaas.io/project=cpaas-system --overwrite
     ```
 
-    ```bash {name=install-tracing:create-jaeger-ingress}
+    ```bash {name=install-tracing-elasticsearch:create-jaeger-ingress}
     kubectl apply -n ${JAEGER_NS} -f - <<EOF
     apiVersion: networking.k8s.io/v1
     kind: Ingress
@@ -474,7 +474,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
     Wait for the Ingress to be ready:
 
-    ```bash {name=install-tracing:wait-jaeger-ingress}
+    ```bash {name=install-tracing-elasticsearch:wait-jaeger-ingress}
     kubectl wait --for=jsonpath='{.status.loadBalancer.ingress}' ingress/${JAEGER_INSTANCE_NAME} \
       -n ${JAEGER_NS} --timeout=180s
     ```
@@ -485,7 +485,7 @@ Access the Jaeger UI at `<platform-url>/clusters/<cluster-name>/jaeger`, where `
 
 Run the following command to print the Jaeger UI URL:
 
-```bash {name=install-tracing:print-jaeger-url}
+```bash {name=install-tracing-elasticsearch:print-jaeger-url}
 echo "Jaeger UI: ${PLATFORM_URL}${JAEGER_BASEPATH}"
 ```
 
@@ -495,7 +495,7 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
 
 1. Create a file named `otel-collector.yaml` with the following content:
 
-    ```yaml title="otel-collector.yaml" {name=install-tracing:otel-collector-yaml}
+    ```yaml title="otel-collector.yaml" {name=install-tracing-elasticsearch:otel-collector-yaml}
     apiVersion: opentelemetry.io/v1beta1
     kind: OpenTelemetryCollector
     metadata:
@@ -576,13 +576,13 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
 
 2. Render the manifest with `envsubst` and apply the configuration:
 
-    ```bash {name=install-tracing:apply-otel-collector}
+    ```bash {name=install-tracing-elasticsearch:apply-otel-collector}
     envsubst < otel-collector.yaml | kubectl apply -f -
     ```
 
 3. Wait for the Collector pod to be ready:
 
-    ```bash {name=install-tracing:wait-otel-collector-rollout}
+    ```bash {name=install-tracing-elasticsearch:wait-otel-collector-rollout}
     kubectl rollout status deployment/otel-collector \
       -n ${JAEGER_NS} --timeout=180s
     ```
@@ -593,7 +593,7 @@ After installing all components, verify the end-to-end tracing pipeline by gener
 
 1. Deploy `telemetrygen` as a test client to generate sample traces:
 
-    ```bash {name=install-tracing:deploy-telemetrygen}
+    ```bash {name=install-tracing-elasticsearch:deploy-telemetrygen}
     kubectl apply -f - <<EOF
     apiVersion: v1
     kind: Pod
@@ -650,7 +650,7 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
 
 1. Retrieve monitoring endpoint and credentials from the cluster:
 
-    ```bash {name=install-tracing-spm:get-monitoring-config}
+    ```bash {name=install-tracing-elasticsearch-spm:get-monitoring-config}
     export MONITORING_URL=$(kubectl get feature monitoring -o jsonpath='{.spec.accessInfo.database.address}')
     MONITORING_SECRET_NAME=$(kubectl get feature monitoring -o jsonpath='{.spec.accessInfo.database.basicAuth.secretName}')
 
@@ -660,7 +660,7 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
 
 2. Create a Secret for monitoring credentials:
 
-    ```bash {name=install-tracing-spm:create-monitoring-secret}
+    ```bash {name=install-tracing-elasticsearch-spm:create-monitoring-secret}
     kubectl create secret generic monitoring-credentials \
       --namespace=${JAEGER_NS} \
       --from-literal=username=${MONITORING_USERNAME} \
@@ -670,7 +670,7 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
 
 3. Patch the OpenTelemetry Collector to enable the SpanMetrics Connector. This adds a `spanmetrics` connector that generates RED metrics from spans and exports them via a Prometheus exporter:
 
-    ```bash {name=install-tracing-spm:patch-otel-collector}
+    ```bash {name=install-tracing-elasticsearch-spm:patch-otel-collector}
     kubectl patch opentelemetrycollector otel -n ${JAEGER_NS} --type=merge -p '
     spec:
       config:
@@ -688,14 +688,14 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
 
     Wait for the Collector to restart:
 
-    ```bash {name=install-tracing-spm:wait-otel-collector-rollout}
+    ```bash {name=install-tracing-elasticsearch-spm:wait-otel-collector-rollout}
     kubectl rollout status deployment/otel-collector \
       -n ${JAEGER_NS} --timeout=180s
     ```
 
 4. Create a file named `jaeger-spm-patch.yaml` with the following content. This patch adds a PromQL metrics backend to Jaeger and enables the Monitor tab:
 
-    ```yaml title="jaeger-spm-patch.yaml" {name=install-tracing-spm:jaeger-spm-patch-yaml}
+    ```yaml title="jaeger-spm-patch.yaml" {name=install-tracing-elasticsearch-spm:jaeger-spm-patch-yaml}
     spec:
       volumes:
         - name: es-credentials
@@ -764,14 +764,14 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
 
 5. Apply the patch:
 
-    ```bash {name=install-tracing-spm:apply-jaeger-patch}
+    ```bash {name=install-tracing-elasticsearch-spm:apply-jaeger-patch}
     kubectl patch opentelemetrycollector ${JAEGER_INSTANCE_NAME} -n ${JAEGER_NS} \
       --type=merge -p "$(envsubst < jaeger-spm-patch.yaml)"
     ```
 
     Wait for Jaeger to restart:
 
-    ```bash {name=install-tracing-spm:wait-jaeger-rollout}
+    ```bash {name=install-tracing-elasticsearch-spm:wait-jaeger-rollout}
     kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector \
       -n ${JAEGER_NS} --timeout=180s
     ```
