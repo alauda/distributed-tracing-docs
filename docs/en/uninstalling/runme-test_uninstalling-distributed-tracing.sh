@@ -49,18 +49,20 @@ test_uninstalling_distributed_tracing() {
     log_info "开始 Alauda Distributed Tracing 卸载测试"
     log_info "=========================================="
 
-    # 步骤 0: 检查 ES 依赖（与安装测试保持一致；未设置则 SKIPPED）
-    if [ -z "${TRACING_ES_ENDPOINT:-}" ]; then
-        log_warn "SKIPPED: 未设置 TRACING_ES_ENDPOINT，跳过分布式调用链卸载测试"
-        return 0
-    fi
-
     # 步骤 1: 设置环境变量（JAEGER_NS / JAEGER_INSTANCE_NAME）
     log_info "步骤 1: 设置卸载环境变量"
     eval "$(runme print uninstall-tracing:set-env)" || {
         log_error "设置卸载环境变量失败"
         return 1
     }
+
+    # 门槛: 卸载存储无关，按集群状态判定是否装过——Jaeger 命名空间不存在则 SKIPPED。
+    # ES 配置加载已下沉到 Elasticsearch 安装测试，卸载子进程不再自动注入 TRACING_ES_ENDPOINT，
+    # 故改用命名空间存在性作为门槛，对 Elasticsearch / OpenSearch 两条链通用。
+    if ! kubectl get namespace "${JAEGER_NS}" &>/dev/null; then
+        log_warn "SKIPPED: 命名空间 ${JAEGER_NS} 不存在，未检测到分布式调用链部署，跳过卸载测试"
+        return 0
+    fi
 
     # 步骤 2: 删除 otel OpenTelemetryCollector 实例
     log_info "步骤 2: 删除 OpenTelemetry Collector 实例"
