@@ -1,0 +1,33 @@
+---
+weight: 20
+---
+
+# OpenSearch
+
+## Introduction
+
+:::warning
+Supported OpenSearch versions: 3.x
+:::
+
+OpenSearch maintains API consistency across releases and remains compatible with Elasticsearch 7.10.2. The OpenSearch version is automatically retrieved from the root/ping endpoint. Based on this version, Jaeger uses compatible index mappings and the OpenSearch REST API. The version can be explicitly provided via the `version:` config property.
+
+OpenSearch does not require initialization other than installing and running OpenSearch. Once it is running, pass the correct configuration values to Jaeger.
+
+Jaeger uses the same storage implementation for OpenSearch as for [Elasticsearch](./elasticsearch.mdx). Most configuration options behave the same way, so refer to the Elasticsearch documentation for the shared details.
+
+## Configuration \{#configuration}
+
+A sample configuration for Jaeger with the OpenSearch backend is available in the Jaeger repository: [config-opensearch.yaml](https://github.com/alauda-mesh/jaeger/tree/v2.16.0/cmd/jaeger/config-opensearch.yaml). Because OpenSearch shares the Elasticsearch implementation, please refer to [config.go](https://github.com/alauda-mesh/jaeger/tree/v2.16.0/internal/storage/elasticsearch/config/config.go) as the authoritative source for the available options.
+
+### Shards and Replicas \{#shards-and-replicas}
+
+Shards and replicas are configuration values to take special attention to, because they are decided upon index creation. The guidance in [Shards and Replicas](./elasticsearch.mdx#shards-and-replicas) for Elasticsearch applies to OpenSearch as well.
+
+## Index management \{#index-management}
+
+The `jaeger-es-rollover` tooling and Index Lifecycle Management (ILM) are specific to Elasticsearch and are not used with OpenSearch. OpenSearch uses the Index State Management (ISM) plugin rather than ILM, and the `jaeger-es-rollover init` command calls the Elasticsearch `_ilm/policy/...` endpoint, which is not compatible with the OpenSearch `_plugins/_ism/policies/...` API.
+
+For OpenSearch, Alauda Distributed Tracing uses daily time-based indices together with the `jaeger-es-index-cleaner` to enforce retention. The cleaner periodically deletes date-suffixed indices (`<prefix>-jaeger-(span|service|dependencies|sampling)-YYYY-MM-DD`) that are older than the configured retention period, without relying on rollover aliases.
+
+For deployment steps, see [Installing Alauda Distributed Tracing with OpenSearch](../../installing/installing-distributed-tracing-opensearch.mdx).
