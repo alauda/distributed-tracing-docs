@@ -154,7 +154,7 @@ test_installing_distributed_tracing_elasticsearch() {
             log_error "TRACING_ACP_ES_CLUSTER=${TRACING_ACP_ES_CLUSTER}，但未能注入 TRACING_ES_ENDPOINT / TRACING_ES_USER / TRACING_ES_PASS"
             return 1
         fi
-        log_warn "SKIPPED: TRACING_ACP_ES_CLUSTER 为空且未设置 TRACING_ES_ENDPOINT / TRACING_ES_USER / TRACING_ES_PASS，跳过分布式调用链安装测试"
+        skip_test "TRACING_ACP_ES_CLUSTER 为空且未设置 TRACING_ES_ENDPOINT / TRACING_ES_USER / TRACING_ES_PASS，跳过分布式调用链安装测试"
         return 0
     fi
     if [ -n "${TRACING_ACP_ES_CLUSTER:-}" ]; then

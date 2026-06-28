@@ -144,7 +144,7 @@ test_installing_distributed_tracing_opensearch() {
 
     # 步骤 0: 校验 OpenSearch 配置（仅支持手动 TRACING_OPENSEARCH_*，无 ACP 自动获取）
     if [ -z "${TRACING_OPENSEARCH_ENDPOINT:-}" ] || [ -z "${TRACING_OPENSEARCH_USER:-}" ] || [ -z "${TRACING_OPENSEARCH_PASS:-}" ]; then
-        log_warn "SKIPPED: 未设置 TRACING_OPENSEARCH_ENDPOINT / TRACING_OPENSEARCH_USER / TRACING_OPENSEARCH_PASS，跳过 OpenSearch 调用链安装测试"
+        skip_test "未设置 TRACING_OPENSEARCH_ENDPOINT / TRACING_OPENSEARCH_USER / TRACING_OPENSEARCH_PASS，跳过 OpenSearch 调用链安装测试"
         return 0
     fi
     log_info "使用手动 OpenSearch 配置: endpoint=${TRACING_OPENSEARCH_ENDPOINT}"
