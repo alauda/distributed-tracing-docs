@@ -24,6 +24,8 @@ The SpanMetrics Connector receives spans and generates metrics exported to a Pro
 - An external Metrics Store that supports PromQL queries.
 - A configuration in the `jaeger_query` extension to reference the external metrics store.
 
+Because the connector aggregates spans into in-memory series, each `(service, operation)` time series must be produced by a **single writer**. With one collector replica this holds automatically. To scale out, spans must be load-balanced **by `service`** so that every service is aggregated on exactly one instance; otherwise the RED metrics are double-counted and become inaccurate. See [Configuration](#configuration) for the resulting two-tier setup.
+
 ![](./assets/spm-promql.png)
 
 ### Derived Time Series
@@ -55,13 +57,40 @@ Max: 324 * num_operations
 
 ## Configuration
 
-Enable the SpanMetrics Connector in your OpenTelemetry Collector pipeline:
+SPM runs in two tiers so that the stateful SpanMetrics Connector always sees each service from a single writer, which keeps the RED metrics accurate even when both tiers run with multiple replicas.
+
+**Front OpenTelemetry Collector** — load-balance spans to the backend by `service`:
+
+```yaml
+exporters:
+  loadbalancing:
+    routing_key: service # all spans of a service go to the same backend instance
+    protocol:
+      otlp:
+        tls:
+          insecure: true
+    resolver:
+      dns:
+        hostname: jaeger-collector-headless.jaeger.svc.cluster.local
+        port: "4317" # the dns resolver requires the port as a string
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug, loadbalancing]
+```
+
+**Jaeger** — run the SpanMetrics Connector and expose the generated metrics on a Prometheus endpoint:
 
 ```yaml
 exporters:
   prometheus:
+    add_metric_suffixes: false # Jaeger expects standard OTel metric names without _total suffixes
     endpoint: "0.0.0.0:8889"
-    # other prometheus options
+    resource_to_telemetry_conversion:
+      enabled: true
 
 connectors:
   spanmetrics:
@@ -70,9 +99,7 @@ connectors:
 service:
   pipelines:
     traces:
-      receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [debug, spanmetrics]
+      exporters: [jaeger_storage_exporter, spanmetrics]
     metrics/spanmetrics:
       receivers: [spanmetrics]
       exporters: [prometheus]
