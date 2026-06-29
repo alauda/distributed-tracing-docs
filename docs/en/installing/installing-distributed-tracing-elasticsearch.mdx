@@ -538,7 +538,7 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
             tls:
               insecure: true
           prometheus:
-            add_metric_suffixes: false # Jaeger expects standard OTel metric names without _total suffixes
+            add_metric_suffixes: false
             endpoint: "0.0.0.0:8889"
             resource_to_telemetry_conversion:
               enabled: true # by default resource attributes are dropped
@@ -641,8 +641,6 @@ Service Performance Monitoring (SPM) surfaces in the Jaeger UI as the **Monitor*
 
 Enabling SPM requires running the SpanMetrics Connector **inside Jaeger** to generate the RED metrics, and routing spans from the front OpenTelemetry Collector to Jaeger through a `loadbalancing` exporter so the metrics stay accurate even when both components run with multiple replicas. Jaeger exposes the metrics on a Prometheus endpoint and serves them back to the Monitor tab through a PromQL-compatible backend.
 
-This setup is high-availability ready. The steps below keep `replicas: 1` for both the Collector and Jaeger, but the topology—a stateless Collector tier that load-balances spans **by `service`** to a Jaeger tier that owns the SpanMetrics aggregation—stays correct when you scale either component up. Because `routing_key: service` sends all spans of a given service to a single Jaeger replica, each replica aggregates a disjoint set of services and avoids the double-counting that occurs when the SpanMetrics Connector is replicated naively.
-
 **Prerequisites**
 
 - Jaeger v2 and the OpenTelemetry Collector are deployed (all previous steps completed).
@@ -686,7 +684,7 @@ This setup is high-availability ready. The steps below keep `replicas: 1` for bo
             resolver:
               dns:
                 hostname: ${JAEGER_INSTANCE_NAME}-collector-headless.${JAEGER_NS}.svc.cluster.local
-                port: '4317' # loadbalancing 的 dns resolver 要求 port 为字符串
+                port: '4317' # the dns resolver requires the port as a string
         service:
           pipelines:
             traces:
@@ -742,7 +740,7 @@ This setup is high-availability ready. The steps below keep `replicas: 1` for bo
           spanmetrics: {} # [!code callout]
         exporters:
           prometheus: # [!code callout]
-            add_metric_suffixes: false
+            add_metric_suffixes: false # Jaeger expects standard OTel metric names without _total suffixes
             endpoint: "0.0.0.0:8889"
             resource_to_telemetry_conversion:
               enabled: true
@@ -804,11 +802,9 @@ This setup is high-availability ready. The steps below keep `replicas: 1` for bo
     ```
 
 :::tip Scaling to multiple replicas
-To run SPM in high availability, increase `spec.replicas` on the `otel` and `${JAEGER_INSTANCE_NAME}` collectors; no other change is required. The stateless Collector tier scales freely, and because spans are load-balanced by `service`, each Jaeger replica owns a disjoint set of services and aggregates them without conflict. Keep these caveats in mind:
 
-- **Counter resets**: when Jaeger replicas restart or scale, SpanMetrics counters may briefly appear non-monotonic. Always consume RED metrics through PromQL `rate()`/`increase()`, which tolerate resets.
-- **Per-service hotspots**: a single very high-traffic service is hashed onto one Jaeger replica as a whole, so load is balanced by service count rather than by request volume.
-- **Headless Service dependency**: the `dns` resolver relies on `${JAEGER_INSTANCE_NAME}-collector-headless`, which the Operator creates automatically. Do not delete it.
+To run SPM in high availability, increase `spec.replicas` on the `otel` and `${JAEGER_INSTANCE_NAME}` collectors; no other change is required. The stateless Collector tier scales freely, and because spans are load-balanced by `service`, each Jaeger replica owns a disjoint set of services and aggregates them without conflict.
+
 :::
 
 **Verification**
