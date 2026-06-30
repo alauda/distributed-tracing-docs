@@ -111,7 +111,7 @@ EOF
 # 抓取单个 Jaeger pod 的 :8889 指标，输出其聚合的 spm-ha-svc-* 列表（每行一个，去重）
 _spm_ha_pod_services() {
     local pod="$1" port="$2" out
-    timeout 20 kubectl -n "$JAEGER_NS" port-forward "pod/$pod" "${port}:8889" >/dev/null 2>&1 &
+    timeout 5 kubectl -n "$JAEGER_NS" port-forward "pod/$pod" "${port}:8889" >/dev/null 2>&1 &
     out=$(curl -s --retry-connrefused --retry 15 --retry-delay 1 --max-time 22 "http://localhost:${port}/metrics")
     printf '%s' "$out" | grep -oE 'service_name="spm-ha-svc-[0-9]+"' \
         | sed -E 's/.*"(spm-ha-svc-[0-9]+)".*/\1/' | sort -u
@@ -127,7 +127,7 @@ _spm_ha_collect_once() {
         --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}')
     i=0
     for pod in $pods; do
-        port=$((18900 + i)); i=$((i + 1))
+        port=$((19900 + i)); i=$((i + 1))
         _spm_ha_pod_services "$pod" "$port" > "$tmpdir/$pod"
         log_info "  副本 ${pod} 聚合 service: [$(tr '\n' ' ' < "$tmpdir/$pod")]"
     done

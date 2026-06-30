@@ -123,11 +123,11 @@ kubectl -n ${JAEGER_NS} get pod -l app.kubernetes.io/name=jaeger-collector \
 | while read -r pod; do
     [ -n "$pod" ] || continue
     echo "=== 副本 $pod 上聚合的 service ==="
-    # timeout 自动回收端口转发；curl 完成后 wait 回收，再处理下一个副本（复用同一端口 18900）
-    timeout 12 kubectl -n ${JAEGER_NS} port-forward "pod/$pod" 18900:8889 >/dev/null 2>&1 &
+    # timeout 自动回收端口转发；curl 完成后 wait 回收，再处理下一个副本（复用同一端口 19900）
+    timeout 5 kubectl -n ${JAEGER_NS} port-forward "pod/$pod" 19900:8889 >/dev/null 2>&1 &
     pf=$!
     curl -s --retry-connrefused --retry 12 --retry-delay 1 --max-time 15 \
-      "http://localhost:18900/metrics" \
+      "http://localhost:19900/metrics" \
       | grep -oE 'service_name="spm-ha-svc-[0-9]+"' | sort -u
     wait "$pf" 2>/dev/null
   done
