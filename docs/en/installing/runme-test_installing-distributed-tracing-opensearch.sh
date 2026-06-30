@@ -16,6 +16,9 @@ set -e
 # 加载框架函数库
 source "$FRAMEWORK_ROOT/framework/common.sh"
 source "$FRAMEWORK_ROOT/framework/verify.sh"
+# tracing 项目钩子：提供 telemetrygen 镜像解析公共函数 tracing_telemetrygen_image（与 ES 版共用）。
+# run.sh 引擎对 --project tracing 已自动 source 本文件，这里显式声明依赖、便于独立运行与阅读。
+source "$FRAMEWORK_ROOT/projects/tracing/project.sh"
 
 # 在 opentelemetry-docs 仓库内执行命令的小封装（OTel Operator 为跨仓库前置依赖，
 # 其 install-otel:* 代码块位于 opentelemetry-docs）。
@@ -32,8 +35,8 @@ _in_otel_repo() {
 # 取出文档代码块后按需改写再执行（镜像替换与测试时长两处改动合并于此函数）：
 #   - 测试时长：第一次由 TRACING_TELEMETRYGEN_TEST_DURATION_1 控制（默认 30s），
 #     第二次由 TRACING_TELEMETRYGEN_TEST_DURATION_2 控制（默认 130s），覆盖文档默认的 150s
-#   - 镜像：USE_MESH_V2_TEST_SUITE_PLUGIN=true 时，参考 projects/mesh/project.sh 的
-#     kubectl_apply_with_mirror，从 mesh-v2-test-suite 集群插件 registry 改写 telemetrygen 镜像
+#   - 镜像：由 tracing_telemetrygen_image（projects/tracing/project.sh）解析有效镜像，
+#     USE_MESH_V2_TEST_SUITE_PLUGIN=true 时改写到 mesh-v2-test-suite 集群插件镜像仓库
 _deploy_telemetrygen() {
     local duration="$1"
     local content
@@ -47,18 +50,11 @@ _deploy_telemetrygen() {
     log_info "telemetrygen 测试时长: $duration"
     content="${content//--duration=150s/--duration=$duration}"
 
-    # 改写镜像：USE_MESH_V2_TEST_SUITE_PLUGIN=true 时使用集群插件镜像仓库
-    if [ "${USE_MESH_V2_TEST_SUITE_PLUGIN:-false}" = "true" ]; then
-        local registry
-        registry=$(kubectl -n cpaas-system get cm mesh-v2-test-suite-manifest \
-            -o jsonpath='{.data.registry}' 2>/dev/null)
-        if [ -z "$registry" ]; then
-            log_error "USE_MESH_V2_TEST_SUITE_PLUGIN=true 但未能从 cpaas-system/mesh-v2-test-suite-manifest 读取 data.registry"
-            return 1
-        fi
-        log_info "使用 mesh-v2-test-suite 集群插件镜像仓库: $registry"
-        content=$(printf '%s' "$content" | sed "s|ghcr\.io/open-telemetry/|${registry}/asm/|")
-    fi
+    # 改写镜像：启用 mesh-v2-test-suite 集群插件时改用其内网镜像仓库
+    # （镜像解析见 projects/tracing/project.sh:tracing_telemetrygen_image，三脚本共用）
+    local image
+    image=$(tracing_telemetrygen_image) || return 1
+    content="${content//$TRACING_TELEMETRYGEN_DEFAULT_IMAGE/$image}"
 
     eval "$content"
 }
@@ -82,8 +78,8 @@ _test_spm() {
         return 1
     }
 
-    # 步骤 21: Patch OpenTelemetry Collector 启用 SpanMetrics Connector
-    log_info "步骤 21: Patch OpenTelemetry Collector 启用 spanmetrics"
+    # 步骤 21: Patch OpenTelemetry Collector 改用 loadbalancing 按 service 路由到 Jaeger（spanmetrics 已移至 Jaeger）
+    log_info "步骤 21: Patch OpenTelemetry Collector 配置 loadbalancing 按 service 路由"
     runme run install-tracing-opensearch-spm:patch-otel-collector || {
         log_error "Patch OpenTelemetry Collector 失败"
         return 1
