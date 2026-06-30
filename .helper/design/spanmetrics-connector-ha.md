@@ -37,7 +37,7 @@
 **两个必须知道的细节：**
 
 1. **当前文档（`replicas: 1`）其实没问题。** 当前配置在单副本下是正确的；这是一个**无法横向扩展**的限制，而不是当前配置的 bug。本设计要解决的是「升到多副本后」的正确性。
-2. **`includeCollectorInstanceID` 特性门控在新版本默认开启。** 它给每个副本的 metrics 加一个 `collector.instance.id` UUID 维度，只是让「裸标签冲突」变成「每副本一条独立 series」以满足数据模型，**并不会把它们合并成一条正确的 service 级聚合**。所以即使在新版上，多副本的 SPM 数字依然不可信（碎片化 + 计数器重置）。
+2. **`includeCollectorInstanceID` 特性门控在新版本默认开启。** 它给每个副本的 metrics 加一个 `collector.instance.id` UUID 维度，只是让「裸标签冲突」变成「每副本一条独立 series」以满足数据模型，**并不会把它们合并成一条正确的 service 级聚合**。所以即使在新版上，多副本的 SPM 数字依然不可信（碎片化 + 计数器重置）。**注意版本门槛**：该门控自 spanmetricsconnector `v0.151.0` 起才默认开启（`v0.147.0`–`v0.150.0` 默认关闭，需 `--feature-gates=connector.spanmetrics.includeCollectorInstanceID` 手动启用）；本文当前部署的 **Jaeger 2.16.0 内嵌 `v0.147.0`**，默认关闭，故实测 `:8889` 指标中并无 `collector.instance.id` 维度。这不影响本方案正确性——正确性由前置层 `routing_key: service` 保证（见第 4 节），该兜底维度有无均无所谓。
 
 ---
 
