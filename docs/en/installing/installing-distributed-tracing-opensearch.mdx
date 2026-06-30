@@ -527,7 +527,7 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
             tls:
               insecure: true
           prometheus:
-            add_metric_suffixes: false # Jaeger expects standard OTel metric names without _total suffixes
+            add_metric_suffixes: false
             endpoint: "0.0.0.0:8889"
             resource_to_telemetry_conversion:
               enabled: true # by default resource attributes are dropped
@@ -628,7 +628,7 @@ After installing all components, verify the end-to-end tracing pipeline by gener
 
 Service Performance Monitoring (SPM) surfaces in the Jaeger UI as the **Monitor** tab, aggregating span data to produce RED (Request, Error, Duration) metrics. This enables you to identify performance issues without requiring prior knowledge of service or operation names. For more details, see [Service Performance Monitoring (SPM)](../configuration/spm.mdx).
 
-Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTelemetry Collector, and configuring a PromQL-compatible metrics backend in Jaeger.
+Enabling SPM requires running the SpanMetrics Connector **inside Jaeger** to generate the RED metrics, and routing spans from the front OpenTelemetry Collector to Jaeger through a `loadbalancing` exporter so the metrics stay accurate even when both components run with multiple replicas. Jaeger exposes the metrics on a Prometheus endpoint and serves them back to the Monitor tab through a PromQL-compatible backend.
 
 **Prerequisites**
 
@@ -657,23 +657,31 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
       --dry-run=client -o yaml | kubectl apply -f -
     ```
 
-3. Patch the OpenTelemetry Collector to enable the SpanMetrics Connector. This adds a `spanmetrics` connector that generates RED metrics from spans and exports them via a Prometheus exporter:
+3. Patch the OpenTelemetry Collector to forward spans to Jaeger through a `loadbalancing` exporter instead of the direct `otlp/traces` exporter. With `routing_key: service`, all spans of a given service are consistently sent to the same Jaeger replica, so the SpanMetrics Connector running inside Jaeger (next step) aggregates each service exactly once. This is what keeps the metrics correct when the Collector or Jaeger runs with more than one replica:
 
     ```bash {name=install-tracing-opensearch-spm:patch-otel-collector}
-    kubectl patch opentelemetrycollector otel -n ${JAEGER_NS} --type=merge -p '
+    kubectl patch opentelemetrycollector otel -n ${JAEGER_NS} --type=merge -p "
     spec:
       config:
-        connectors:
-          spanmetrics: {}
+        exporters:
+          loadbalancing:
+            routing_key: service
+            protocol:
+              otlp:
+                tls:
+                  insecure: true
+            resolver:
+              dns:
+                hostname: ${JAEGER_INSTANCE_NAME}-collector-headless.${JAEGER_NS}.svc.cluster.local
+                port: '4317' # the dns resolver requires the port as a string
         service:
           pipelines:
             traces:
-              exporters: [debug, otlp/traces, spanmetrics]
-            metrics/spanmetrics:
-              receivers: [spanmetrics]
-              exporters: [prometheus]
-    '
+              exporters: [debug, loadbalancing]
+    "
     ```
+
+    The `dns` resolver discovers every Jaeger collector Pod through the headless Service that the OpenTelemetry Operator provisions automatically (`${JAEGER_INSTANCE_NAME}-collector-headless`), so no additional Service or RBAC is required.
 
     Wait for the Collector to restart:
 
@@ -682,7 +690,7 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
       -n ${JAEGER_NS} --timeout=180s
     ```
 
-4. Create a file named `jaeger-spm-patch.yaml` with the following content. This patch adds a PromQL metrics backend to Jaeger and enables the Monitor tab:
+4. Create a file named `jaeger-spm-patch.yaml` with the following content. This patch runs the SpanMetrics Connector inside Jaeger, exposes the generated RED metrics on a Prometheus endpoint, and adds a PromQL metrics backend so Jaeger can serve them to the Monitor tab:
 
     ```yaml title="jaeger-spm-patch.yaml" {name=install-tracing-opensearch-spm:jaeger-spm-patch-yaml}
     spec:
@@ -717,6 +725,14 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
           mountPath: /etc/jaeger/monitoring-credentials
           readOnly: true
       config:
+        connectors:
+          spanmetrics: {} # [!code callout]
+        exporters:
+          prometheus: # [!code callout]
+            add_metric_suffixes: false # Jaeger expects standard OTel metric names without _total suffixes
+            endpoint: "0.0.0.0:8889"
+            resource_to_telemetry_conversion:
+              enabled: true
         extensions:
           basicauth/monitoring: # [!code callout]
             client_auth:
@@ -736,19 +752,28 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
               metrics: monitoring_metrics_storage # [!code callout]
         service:
           extensions: [basicauth/monitoring, healthcheckv2, jaeger_storage, jaeger_query] # [!code callout]
+          pipelines:
+            traces: # [!code callout]
+              exporters: [debug, jaeger_storage_exporter, spanmetrics]
+            metrics/spanmetrics:
+              receivers: [spanmetrics]
+              exporters: [prometheus]
     ```
 
     <Callouts>
       1. The `monitoring-credentials` volume mounts the monitoring basic-auth credentials into the Jaeger container.
       2. The `monitoring-credentials` volumeMount makes the credentials available at `/etc/jaeger/monitoring-credentials/`.
-      3. The `basicauth/monitoring` extension provides basic authentication for the monitoring metrics endpoint.
-      4. The `metric_backends` section configures the PromQL-compatible metrics storage that Jaeger queries for SPM data.
-      5. Reference the metrics store in the `jaeger_query` extension.
-      6. The `basicauth/monitoring` extension must be added to the `service.extensions` list to be active.
+      3. The `spanmetrics` connector generates RED metrics from the spans Jaeger receives. Because the Collector routes each service to a single Jaeger replica, every replica aggregates a disjoint set of services correctly.
+      4. The `prometheus` exporter exposes the generated metrics on port `8889`. The Jaeger instance already carries the `prometheus: kube-prometheus` label and `observability.metrics.enableMetrics: true` (set in `jaeger.yaml`), so the Operator automatically creates a `ServiceMonitor` that lets ACP Prometheus scrape this endpoint.
+      5. The `basicauth/monitoring` extension provides basic authentication for the monitoring metrics endpoint.
+      6. The `metric_backends` section configures the PromQL-compatible metrics storage that Jaeger queries for SPM data.
+      7. Reference the metrics store in the `jaeger_query` extension.
+      8. The `basicauth/monitoring` extension must be added to the `service.extensions` list to be active.
+      9. The `traces` pipeline now also exports to `spanmetrics` (storage plus metrics generation), and a dedicated `metrics/spanmetrics` pipeline forwards the generated metrics to the `prometheus` exporter.
     </Callouts>
 
     :::warning
-    The `volumes`, `volumeMounts`, and `service.extensions` fields are arrays. A merge patch replaces arrays entirely rather than appending to them. The patch file above includes all existing entries alongside the new ones to prevent data loss.
+    The `volumes`, `volumeMounts`, `service.extensions`, and pipeline `exporters` fields are arrays. A merge patch replaces arrays entirely rather than appending to them. The patch file above includes all existing entries alongside the new ones to prevent data loss.
     :::
 
 5. Apply the patch:
@@ -764,6 +789,12 @@ Enabling SPM requires two changes: adding a SpanMetrics Connector to the OpenTel
     kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector \
       -n ${JAEGER_NS} --timeout=180s
     ```
+
+:::tip Scaling to multiple replicas
+
+To run SPM in high availability, increase `spec.replicas` on the `otel` and `${JAEGER_INSTANCE_NAME}` collectors; no other change is required. The stateless Collector tier scales freely, and because spans are load-balanced by `service`, each Jaeger replica owns a disjoint set of services and aggregates them without conflict. Keep these caveats in mind:
+
+:::
 
 **Verification**
 
