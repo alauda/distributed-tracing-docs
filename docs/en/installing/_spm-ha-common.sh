@@ -11,27 +11,18 @@
 #
 # 参见手册：distributed-tracing-docs/.helper/ops/spanmetrics-ha-verification.md
 
+# 复用 tracing 项目公共函数 tracing_telemetrygen_image（telemetrygen 镜像解析）。
+# 经 docs-runme-tests/run.sh 运行时，引擎对 --project tracing 已自动 source 该文件；
+# 此处在直接 source 本文件的场景下补充加载，FRAMEWORK_ROOT 未注入时跳过。
+[ -n "${FRAMEWORK_ROOT:-}" ] && [ -f "$FRAMEWORK_ROOT/projects/tracing/project.sh" ] \
+    && source "$FRAMEWORK_ROOT/projects/tracing/project.sh"
+
 # ── 可调参数（均带默认值，与安装文档默认一致）─────────────────────────────────
 JAEGER_NS="${JAEGER_NS:-jaeger-system}"               # Jaeger 命名空间
 JAEGER_INSTANCE_NAME="${JAEGER_INSTANCE_NAME:-jaeger}" # Jaeger 实例名
 SPM_HA_REPLICAS="${SPM_HA_REPLICAS:-2}"               # 扩容目标副本数
 SPM_HA_SVC_COUNT="${SPM_HA_SVC_COUNT:-6}"             # 测试 service 数量
 SPM_HA_TG_DURATION="${SPM_HA_TG_DURATION:-30s}"       # 每个 telemetrygen 发送时长
-
-# 解析 telemetrygen 镜像：与安装测试 _deploy_telemetrygen 一致，
-# USE_MESH_V2_TEST_SUITE_PLUGIN=true 时改写为 mesh-v2-test-suite 集群插件的内网仓库。
-_spm_ha_telemetrygen_image() {
-    local img="ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest"
-    if [ "${USE_MESH_V2_TEST_SUITE_PLUGIN:-false}" = "true" ]; then
-        local registry
-        registry=$(kubectl -n cpaas-system get cm mesh-v2-test-suite-manifest \
-            -o jsonpath='{.data.registry}' 2>/dev/null)
-        if [ -n "$registry" ]; then
-            img="${registry}/asm/opentelemetry-collector-contrib/telemetrygen:latest"
-        fi
-    fi
-    printf '%s' "$img"
-}
 
 # 前置检查：确认当前为新方案 SPM 拓扑。
 # otel 实例不存在视为「环境未安装」→ 由调用方 skip；存在但配置不符 → 失败。
@@ -71,7 +62,8 @@ _spm_ha_scale() {
 # 部署 count 个不同 service 的 telemetrygen，统一发往前置 otel，并等待发送完成
 _spm_ha_deploy_telemetrygen() {
     local count="$1" image i
-    image=$(_spm_ha_telemetrygen_image)
+    # 解析 telemetrygen 有效镜像（公共函数见 docs-runme-tests/projects/tracing/project.sh）
+    image=$(tracing_telemetrygen_image) || { log_error "解析 telemetrygen 镜像失败"; return 1; }
     log_info "部署 ${count} 个 telemetrygen（service: spm-ha-svc-0..$((count - 1))，镜像: ${image}）"
     for i in $(seq 0 $((count - 1))); do
         kubectl -n "$JAEGER_NS" delete pod "tg-svc-$i" --ignore-not-found >/dev/null 2>&1
