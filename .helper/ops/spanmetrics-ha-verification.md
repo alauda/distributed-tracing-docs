@@ -114,19 +114,23 @@ done
 逐个 Jaeger 副本查询其 `:8889` 暴露的 spanmetrics，提取每个副本上聚合的 service：
 
 ```bash
-PODS=$(kubectl -n ${JAEGER_NS} get pod -l app.kubernetes.io/name=jaeger-collector \
-  --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}')
-
-i=0
-for pod in $PODS; do
-  port=$((18900 + i)); i=$((i + 1))
-  # 用 timeout 自动回收端口转发，无需手动 kill
-  timeout 12 kubectl -n ${JAEGER_NS} port-forward "pod/$pod" ${port}:8889 >/dev/null 2>&1 &
-  out=$(curl -s --retry-connrefused --retry 12 --retry-delay 1 --max-time 15 "http://localhost:${port}/metrics")
-  echo "=== 副本 $pod 上聚合的 service ==="
-  echo "$out" | grep -oE 'service_name="spm-ha-svc-[0-9]+"' | sort -u
-done
-wait 2>/dev/null
+# 注意：macOS 默认 shell 为 zsh，未加引号的变量展开（$PODS）默认不做单词分割（word splitting），
+# 用 `for pod in $PODS` 会把整串 pod 名当成一个、循环仅执行一次。这里改用 while read 逐行读取，
+# 让 jsonpath 每行输出一个 pod 名，bash 与 zsh 都能正确逐个迭代副本。
+kubectl -n ${JAEGER_NS} get pod -l app.kubernetes.io/name=jaeger-collector \
+  --field-selector=status.phase=Running \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
+| while read -r pod; do
+    [ -n "$pod" ] || continue
+    echo "=== 副本 $pod 上聚合的 service ==="
+    # timeout 自动回收端口转发；curl 完成后 wait 回收，再处理下一个副本（复用同一端口 18900）
+    timeout 12 kubectl -n ${JAEGER_NS} port-forward "pod/$pod" 18900:8889 >/dev/null 2>&1 &
+    pf=$!
+    curl -s --retry-connrefused --retry 12 --retry-delay 1 --max-time 15 \
+      "http://localhost:18900/metrics" \
+      | grep -oE 'service_name="spm-ha-svc-[0-9]+"' | sort -u
+    wait "$pf" 2>/dev/null
+  done
 ```
 
 ### 判定标准
