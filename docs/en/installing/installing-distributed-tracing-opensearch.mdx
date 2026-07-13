@@ -371,7 +371,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     apiVersion: batch/v1
     kind: CronJob
     metadata:
-      name: jaeger-es-index-cleaner
+      name: ${JAEGER_INSTANCE_NAME}-es-index-cleaner
       namespace: ${JAEGER_NS}
     spec:
       schedule: "${JAEGER_CLEANER_SCHEDULE}" # [!code callout]
