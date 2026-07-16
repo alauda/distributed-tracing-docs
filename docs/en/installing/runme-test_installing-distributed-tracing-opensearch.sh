@@ -5,8 +5,11 @@
 #           「Deploying the OpenTelemetry Collector」「Verification」「(Optional) SPM」章节。
 #
 # 与 Elasticsearch 版的差异：
-#   - OpenSearch 仅支持手动配置 TRACING_OPENSEARCH_ENDPOINT/USER/PASS（无 ACP 自动获取），
-#     故本脚本不引入 _tracing_load_acp_es_config。
+#   - OpenSearch 无 ACP 自动获取（不引入 _tracing_load_acp_es_config）。默认自动安装：
+#     TRACING_INSTALL_OPENSEARCH=true（默认）且 PKG_ACP_STORAGE_OPERATOR_URL /
+#     PKG_TOPOLVM_OPERATOR_URL 齐全时，步骤 0 自动安装 TopoLVM + OpenSearch 并用实际
+#     安装结果覆盖 TRACING_OPENSEARCH_*（见 projects/tracing/opensearch.sh）；
+#     不满足时降级用手动 TRACING_OPENSEARCH_ENDPOINT/USER/PASS，两者皆缺则 SKIPPED。
 #   - 无 ILM Policy / rollover-init 步骤；改用 jaeger-es-index-cleaner 按日索引清理。
 
 set -e
@@ -138,12 +141,25 @@ test_installing_distributed_tracing_opensearch() {
     log_info "开始 Alauda Distributed Tracing 安装测试 (OpenSearch)"
     log_info "=========================================="
 
-    # 步骤 0: 校验 OpenSearch 配置（仅支持手动 TRACING_OPENSEARCH_*，无 ACP 自动获取）
-    if [ -z "${TRACING_OPENSEARCH_ENDPOINT:-}" ] || [ -z "${TRACING_OPENSEARCH_USER:-}" ] || [ -z "${TRACING_OPENSEARCH_PASS:-}" ]; then
-        skip_test "未设置 TRACING_OPENSEARCH_ENDPOINT / TRACING_OPENSEARCH_USER / TRACING_OPENSEARCH_PASS，跳过 OpenSearch 调用链安装测试"
+    # 步骤 0: OpenSearch 存储后端准备
+    # 优先自动安装（前置步骤）：TRACING_INSTALL_OPENSEARCH=true（默认）且 TopoLVM 插件包
+    # 地址齐全时，自动安装 TopoLVM + OpenSearch，并用实际安装结果覆盖 TRACING_OPENSEARCH_*；
+    # 否则降级用手动 TRACING_OPENSEARCH_*；两者皆不可用则跳过（与旧行为一致）。
+    if tracing_opensearch_auto_install_enabled; then
+        log_info "步骤 0: 自动安装 OpenSearch 存储后端（TRACING_INSTALL_OPENSEARCH=${TRACING_INSTALL_OPENSEARCH}）"
+        tracing_ensure_opensearch || {
+            log_error "OpenSearch 存储后端自动安装失败"
+            return 1
+        }
+    elif [ -n "${TRACING_OPENSEARCH_ENDPOINT:-}" ] && [ -n "${TRACING_OPENSEARCH_USER:-}" ] && [ -n "${TRACING_OPENSEARCH_PASS:-}" ]; then
+        if [ "${TRACING_INSTALL_OPENSEARCH:-true}" = "true" ]; then
+            log_warn "TRACING_INSTALL_OPENSEARCH=true 但未设置 PKG_ACP_STORAGE_OPERATOR_URL / PKG_TOPOLVM_OPERATOR_URL，降级使用手动 OpenSearch 配置"
+        fi
+        log_info "步骤 0: 使用手动 OpenSearch 配置: endpoint=${TRACING_OPENSEARCH_ENDPOINT}"
+    else
+        skip_test "OpenSearch 存储后端不可用：自动安装未启用（TRACING_INSTALL_OPENSEARCH=true 且 PKG_ACP_STORAGE_OPERATOR_URL / PKG_TOPOLVM_OPERATOR_URL 齐全才生效），且未设置手动 TRACING_OPENSEARCH_ENDPOINT / USER / PASS，跳过 OpenSearch 调用链安装测试"
         return 0
     fi
-    log_info "使用手动 OpenSearch 配置: endpoint=${TRACING_OPENSEARCH_ENDPOINT}"
 
     # 步骤 1: 安装 Alauda Build of OpenTelemetry v2 Operator（跨仓库前置依赖）
     log_info "步骤 1: 安装 OpenTelemetry v2 Operator"
