@@ -3,6 +3,9 @@
 # 对应文档: docs/en/installing/installing-distributed-tracing-elasticsearch.mdx
 # 覆盖范围: 「Deploying the Alauda Build of Jaeger v2」与「Deploying the OpenTelemetry
 #           Collector」「Verification」章节；「(Optional) SPM」章节首期不纳入。
+# 前置步骤: TRACING_INSTALL_ES=true 且 PKG_LOG_CENTER_URL 非空时，步骤 0 自动安装
+#           ACP 日志存储 Elasticsearch（logcenter 集群插件）到 TRACING_ACP_ES_CLUSTER
+#           指定集群（已安装则跳过），见 docs-runme-tests/projects/tracing/elasticsearch.sh。
 
 set -e
 
@@ -135,10 +138,19 @@ test_installing_distributed_tracing_elasticsearch() {
     log_info "=========================================="
 
     # 步骤 0: 加载并校验 Elasticsearch 配置。
+    #   TRACING_INSTALL_ES=true 且 PKG_LOG_CENTER_URL 非空时，先自动安装 ACP 日志存储
+    #   Elasticsearch（logcenter 集群插件，Single Node 模式）到 TRACING_ACP_ES_CLUSTER
+    #   指定集群——对应集群已安装过则跳过，随后仍走下方 ACP 配置注入（安装逻辑见
+    #   projects/tracing/elasticsearch.sh）。
     #   ACP ES 配置加载已从 project_prepare 下沉到此处，确保 _tracing_load_acp_es_config
     #   只在 Elasticsearch 场景执行。TRACING_ACP_ES_CLUSTER（默认 global）非空时从 ACP
     #   log-center 自动注入 TRACING_ES_*；置空则使用手动 TRACING_ES_ENDPOINT/USER/PASS。
     _tracing_set_default_acp_es_cluster
+    if tracing_es_auto_install_enabled; then
+        tracing_ensure_acp_elasticsearch || return 1
+    elif [ "${TRACING_INSTALL_ES:-false}" = "true" ]; then
+        log_warn "TRACING_INSTALL_ES=true 但未设置 PKG_LOG_CENTER_URL，跳过自动安装，沿用既有 Elasticsearch 配置逻辑"
+    fi
     if [ -n "${TRACING_ACP_ES_CLUSTER:-}" ]; then
         _tracing_load_acp_es_config || return 1
     fi
