@@ -31,14 +31,14 @@ Cluster plugins are installed by creating a `ModuleInfo` resource **in the `glob
 
 1. Run the following command in the `global` cluster to check the published plugin versions:
 
-    ```bash
+    ```bash {name=install-tracing-elasticsearch:list-jaeger-plugin-versions}
     kubectl get moduleconfigs -l cpaas.io/module-name=jaeger-cluster-plugin \
       -o custom-columns=NAME:.metadata.name,VERSION:.spec.version
     ```
 
 2. Create a `ModuleInfo` resource in the `global` cluster to install the plugin. Replace `<target-cluster>` with the name of the cluster where the tracing components will be deployed, and `<plugin-version>` with a version from the previous step:
 
-    ```bash
+    ```bash {name=install-tracing-elasticsearch:create-jaeger-plugin-moduleinfo}
     kubectl apply -f - <<EOF
     apiVersion: cluster.alauda.io/v1alpha1
     kind: ModuleInfo
@@ -56,7 +56,7 @@ Cluster plugins are installed by creating a `ModuleInfo` resource **in the `glob
 
 3. Verify the installation in the `global` cluster:
 
-    ```bash
+    ```bash {name=install-tracing-elasticsearch:verify-jaeger-plugin-moduleinfo}
     kubectl get moduleinfo -l cpaas.io/module-name=jaeger-cluster-plugin
     ```
 
@@ -64,7 +64,7 @@ Cluster plugins are installed by creating a `ModuleInfo` resource **in the `glob
 
 4. Verify that the ConfigMap has been created in the target cluster (run against the target cluster):
 
-    ```bash
+    ```bash {name=install-tracing-elasticsearch:verify-jaeger-plugin-configmap}
     kubectl get configmap jaeger-cluster-plugin-manifest -n cpaas-system
     ```
 
