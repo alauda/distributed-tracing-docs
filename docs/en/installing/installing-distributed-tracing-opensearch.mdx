@@ -784,7 +784,7 @@ Enabling SPM requires running the SpanMetrics Connector **inside Jaeger** to gen
           spanmetrics: {} # [!code callout]
         exporters:
           prometheus: # [!code callout]
-            add_metric_suffixes: false # Jaeger expects standard OTel metric names without _total suffixes
+            translation_strategy: UnderscoreEscapingWithoutSuffixes # keep OTel metric names without _total suffixes (add_metric_suffixes is deprecated and ignored since Jaeger v2.20.0 / collector-contrib v0.154.0)
             endpoint: "0.0.0.0:8889"
             resource_to_telemetry_conversion:
               enabled: true
