@@ -593,7 +593,7 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
             tls:
               insecure: true
           prometheus:
-            add_metric_suffixes: false
+            translation_strategy: UnderscoreEscapingWithoutSuffixes # keep OTel metric names without _total suffixes (add_metric_suffixes is deprecated and ignored since collector-contrib v0.154.0)
             endpoint: "0.0.0.0:8889"
             resource_to_telemetry_conversion:
               enabled: true # by default resource attributes are dropped
