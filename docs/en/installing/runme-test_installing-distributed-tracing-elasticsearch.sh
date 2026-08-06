@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Alauda Distributed Tracing 安装文档测试脚本
 # 对应文档: docs/en/installing/installing-distributed-tracing-elasticsearch.mdx
-# 覆盖范围: 「Deploying the Alauda Build of Jaeger v2」与「Deploying the OpenTelemetry
-#           Collector」「Verification」章节；「(Optional) SPM」章节首期不纳入。
+# 覆盖范围: 「Installing the Alauda Build of Jaeger v2 Cluster Plugin」（仅 CLI 安装方案）
+#           「Deploying the Alauda Build of Jaeger v2」「Deploying the OpenTelemetry
+#           Collector」「Verification」「(Optional) SPM」章节。
 # 前置步骤: TRACING_INSTALL_ES=true 且 PKG_LOG_CENTER_URL 非空时，步骤 0 自动安装
 #           ACP 日志存储 Elasticsearch（logcenter 集群插件）到 TRACING_ACP_ES_CLUSTER
 #           指定集群（已安装则跳过），见 docs-runme-tests/projects/tracing/elasticsearch.sh。
@@ -14,7 +15,8 @@ set -e
 # 加载框架函数库
 source "$FRAMEWORK_ROOT/framework/common.sh"
 source "$FRAMEWORK_ROOT/framework/verify.sh"
-# tracing 项目钩子：提供 _tracing_load_acp_es_config / _tracing_set_default_acp_es_cluster。
+# tracing 项目钩子：提供 _tracing_load_acp_es_config / _tracing_set_default_acp_es_cluster，
+# 以及 Jaeger v2 集群插件共享安装函数 tracing_install_jaeger_plugin（与 OpenSearch 版共用）。
 # ACP ES 配置加载已从 project_prepare 下沉到本 Elasticsearch 安装测试，确保
 # _tracing_load_acp_es_config 只在 Elasticsearch 场景执行（OpenSearch 测试不引入）。
 source "$FRAMEWORK_ROOT/projects/tracing/project.sh"
@@ -63,61 +65,61 @@ _deploy_telemetrygen() {
 _test_spm() {
     log_header "Service Performance Monitoring (SPM) 测试"
 
-    # 步骤 19: 拉取 monitoring 端点与凭据
-    log_info "步骤 19: 拉取 monitoring 配置"
+    # 步骤 20: 拉取 monitoring 端点与凭据
+    log_info "步骤 20: 拉取 monitoring 配置"
     eval "$(runme print install-tracing-elasticsearch-spm:get-monitoring-config)" || {
         log_error "拉取 monitoring 配置失败"
         return 1
     }
 
-    # 步骤 20: 创建 monitoring 凭据 Secret
-    log_info "步骤 20: 创建 monitoring 凭据 Secret"
+    # 步骤 21: 创建 monitoring 凭据 Secret
+    log_info "步骤 21: 创建 monitoring 凭据 Secret"
     runme run install-tracing-elasticsearch-spm:create-monitoring-secret || {
         log_error "创建 monitoring 凭据 Secret 失败"
         return 1
     }
 
-    # 步骤 21: Patch OpenTelemetry Collector 改用 loadbalancing 按 service 路由到 Jaeger（spanmetrics 已移至 Jaeger）
-    log_info "步骤 21: Patch OpenTelemetry Collector 配置 loadbalancing 按 service 路由"
+    # 步骤 22: Patch OpenTelemetry Collector 改用 loadbalancing 按 service 路由到 Jaeger（spanmetrics 已移至 Jaeger）
+    log_info "步骤 22: Patch OpenTelemetry Collector 配置 loadbalancing 按 service 路由"
     runme run install-tracing-elasticsearch-spm:patch-otel-collector || {
         log_error "Patch OpenTelemetry Collector 失败"
         return 1
     }
 
-    # 步骤 22: 等待 OpenTelemetry Collector 重启就绪
-    log_info "步骤 22: 等待 OpenTelemetry Collector 重启就绪"
+    # 步骤 23: 等待 OpenTelemetry Collector 重启就绪
+    log_info "步骤 23: 等待 OpenTelemetry Collector 重启就绪"
     runme run install-tracing-elasticsearch-spm:wait-otel-collector-rollout || {
         log_error "等待 OpenTelemetry Collector 重启失败"
         return 1
     }
 
-    # 步骤 23: 生成 jaeger-spm-patch.yaml 到 /tmp
-    log_info "步骤 23: 生成 /tmp/jaeger-spm-patch.yaml"
+    # 步骤 24: 生成 jaeger-spm-patch.yaml 到 /tmp
+    log_info "步骤 24: 生成 /tmp/jaeger-spm-patch.yaml"
     runme print install-tracing-elasticsearch-spm:jaeger-spm-patch-yaml > /tmp/jaeger-spm-patch.yaml || {
         log_error "生成 jaeger-spm-patch.yaml 失败"
         return 1
     }
 
-    # 步骤 24: 应用 SPM patch（需在 /tmp 目录下执行）
-    log_info "步骤 24: 应用 jaeger-spm-patch.yaml"
+    # 步骤 25: 应用 SPM patch（需在 /tmp 目录下执行）
+    log_info "步骤 25: 应用 jaeger-spm-patch.yaml"
     kubectl_apply_runme_block "install-tracing-elasticsearch-spm:apply-jaeger-patch" "/tmp/" || {
         log_error "应用 jaeger-spm-patch.yaml 失败"
         return 1
     }
 
-    # 步骤 25: 等待 Jaeger 重启就绪
-    log_info "步骤 25: 等待 Jaeger 重启就绪"
+    # 步骤 26: 等待 Jaeger 重启就绪
+    log_info "步骤 26: 等待 Jaeger 重启就绪"
     runme run install-tracing-elasticsearch-spm:wait-jaeger-rollout || {
         log_error "等待 Jaeger 重启失败"
         return 1
     }
 
-    # 步骤 26: 重新部署 telemetrygen 验证 SPM 指标（文档 Verification 要求）
-    # --skip-telemetrygen 时跳过：SPM 配置路径已由步骤 19-25 覆盖。
+    # 步骤 27: 重新部署 telemetrygen 验证 SPM 指标（文档 Verification 要求）
+    # --skip-telemetrygen 时跳过：SPM 配置路径已由步骤 20-26 覆盖。
     if [ "${SKIP_TELEMETRYGEN:-false}" = "true" ]; then
-        log_warn "SKIP_TELEMETRYGEN=true，跳过步骤 26 SPM telemetrygen 验证"
+        log_warn "SKIP_TELEMETRYGEN=true，跳过步骤 27 SPM telemetrygen 验证"
     else
-        log_info "步骤 26: 重新部署 telemetrygen 验证 SPM"
+        log_info "步骤 27: 重新部署 telemetrygen 验证 SPM"
         _deploy_telemetrygen "${TRACING_TELEMETRYGEN_TEST_DURATION_2:-130s}" || {
             log_error "SPM telemetrygen 验证失败"
             return 1
@@ -168,8 +170,19 @@ test_installing_distributed_tracing_elasticsearch() {
         log_info "使用手动 Elasticsearch 配置: endpoint=${TRACING_ES_ENDPOINT}"
     fi
 
-    # 步骤 1: 安装 Alauda Build of OpenTelemetry v2 Operator（跨仓库前置依赖）
-    log_info "步骤 1: 安装 OpenTelemetry v2 Operator"
+    # 步骤 1: 安装 Alauda Build of Jaeger v2 集群插件（文档「Installing the Alauda Build
+    # of Jaeger v2 Cluster Plugin > Installing via the CLI」章节。两篇安装文档的该章节
+    # 内容一致，安装逻辑抽象为共享函数、按 runme 前缀参数化，见
+    # docs-runme-tests/projects/tracing/jaeger-plugin.sh；后续 get-platform-config
+    # 从插件创建的 ConfigMap 读取 Jaeger 相关镜像地址）
+    log_info "步骤 1: 安装 Alauda Build of Jaeger v2 集群插件（CLI 方式）"
+    tracing_install_jaeger_plugin "install-tracing-elasticsearch" || {
+        log_error "Jaeger v2 集群插件安装失败"
+        return 1
+    }
+
+    # 步骤 2: 安装 Alauda Build of OpenTelemetry v2 Operator（跨仓库前置依赖）
+    log_info "步骤 2: 安装 OpenTelemetry v2 Operator"
     if [ -z "${OTEL_REPO_ROOT:-}" ]; then
         log_error "OTEL_REPO_ROOT 未注入，无法定位 opentelemetry-docs 安装 OTel Operator"
         return 1
@@ -183,98 +196,98 @@ test_installing_distributed_tracing_elasticsearch() {
         return 1
     }
 
-    # 步骤 2: 注入 Elasticsearch 连接环境变量（替代文档步骤 1 的占位符）
-    log_info "步骤 2: 设置 Elasticsearch 连接环境变量"
+    # 步骤 3: 注入 Elasticsearch 连接环境变量（替代文档步骤 1 的占位符）
+    log_info "步骤 3: 设置 Elasticsearch 连接环境变量"
     export ES_ENDPOINT="$TRACING_ES_ENDPOINT"
     export ES_USER="$TRACING_ES_USER"
     export ES_PASS="$TRACING_ES_PASS"
 
-    # 步骤 3: 拉取平台配置与 Jaeger 镜像
-    log_info "步骤 3: 拉取平台配置"
+    # 步骤 4: 拉取平台配置与 Jaeger 镜像
+    log_info "步骤 4: 拉取平台配置"
     eval "$(runme print install-tracing-elasticsearch:get-platform-config)" || {
         log_error "拉取平台配置失败"
         return 1
     }
 
-    # 步骤 4: 设置 Jaeger 默认环境变量
-    log_info "步骤 4: 设置 Jaeger 默认环境变量"
+    # 步骤 5: 设置 Jaeger 默认环境变量
+    log_info "步骤 5: 设置 Jaeger 默认环境变量"
     eval "$(runme print install-tracing-elasticsearch:set-jaeger-defaults)" || {
         log_error "设置 Jaeger 默认环境变量失败"
         return 1
     }
 
-    # 步骤 5: 创建 Jaeger 命名空间与 ES 凭据 Secret
-    log_info "步骤 5: 创建命名空间与 ES 凭据 Secret"
+    # 步骤 6: 创建 Jaeger 命名空间与 ES 凭据 Secret
+    log_info "步骤 6: 创建命名空间与 ES 凭据 Secret"
     runme run install-tracing-elasticsearch:create-jaeger-ns-and-es-secret || {
         log_error "创建命名空间与 ES Secret 失败"
         return 1
     }
 
-    # 步骤 5.1: 验证 ES Secret
-    log_info "步骤 5.1: 验证 ES Secret"
+    # 步骤 6.1: 验证 ES Secret
+    log_info "步骤 6.1: 验证 ES Secret"
     runme run install-tracing-elasticsearch:verify-es-secret || {
         log_error "验证 ES Secret 失败"
         return 1
     }
 
-    # 步骤 6: 创建 ILM Policy
-    log_info "步骤 6: 创建 ILM Policy"
+    # 步骤 7: 创建 ILM Policy
+    log_info "步骤 7: 创建 ILM Policy"
     runme run install-tracing-elasticsearch:create-ilm-policy || {
         log_error "创建 ILM Policy 失败"
         return 1
     }
 
-    # 步骤 6.1: 验证 ILM Policy
-    log_info "步骤 6.1: 验证 ILM Policy"
+    # 步骤 7.1: 验证 ILM Policy
+    log_info "步骤 7.1: 验证 ILM Policy"
     runme run install-tracing-elasticsearch:verify-ilm-policy || {
         log_error "验证 ILM Policy 失败"
         return 1
     }
 
-    # 步骤 7: 创建 jaeger-es-rollover-init Job
-    log_info "步骤 7: 创建 rollover-init Job"
+    # 步骤 8: 创建 jaeger-es-rollover-init Job
+    log_info "步骤 8: 创建 rollover-init Job"
     runme run install-tracing-elasticsearch:create-rollover-init-job || {
         log_error "创建 rollover-init Job 失败"
         return 1
     }
 
-    # 步骤 7.1: 等待 Job 完成并验证索引模板/别名
-    log_info "步骤 7.1: 等待 rollover-init Job 完成并验证"
+    # 步骤 8.1: 等待 Job 完成并验证索引模板/别名
+    log_info "步骤 8.1: 等待 rollover-init Job 完成并验证"
     runme run install-tracing-elasticsearch:verify-rollover-init || {
         log_error "验证 rollover-init 失败"
         return 1
     }
 
-    # 步骤 8: 清理 rollover-init Job
-    log_info "步骤 8: 清理 rollover-init Job"
+    # 步骤 9: 清理 rollover-init Job
+    log_info "步骤 9: 清理 rollover-init Job"
     runme run install-tracing-elasticsearch:delete-rollover-init-job || {
         log_error "清理 rollover-init Job 失败"
         return 1
     }
 
-    # 步骤 9: 创建 OAuth2 Proxy Secret
-    log_info "步骤 9: 创建 OAuth2 Proxy Secret"
+    # 步骤 10: 创建 OAuth2 Proxy Secret
+    log_info "步骤 10: 创建 OAuth2 Proxy Secret"
     runme run install-tracing-elasticsearch:create-oauth2-proxy-secret || {
         log_error "创建 OAuth2 Proxy Secret 失败"
         return 1
     }
 
-    # 步骤 10: 生成 jaeger.yaml 到 /tmp（envsubst apply 依赖 cwd 中存在该文件）
-    log_info "步骤 10: 生成 /tmp/jaeger.yaml"
+    # 步骤 11: 生成 jaeger.yaml 到 /tmp（envsubst apply 依赖 cwd 中存在该文件）
+    log_info "步骤 11: 生成 /tmp/jaeger.yaml"
     runme print install-tracing-elasticsearch:jaeger-yaml > /tmp/jaeger.yaml || {
         log_error "生成 jaeger.yaml 失败"
         return 1
     }
 
-    # 步骤 11: envsubst 渲染并 apply（需在 /tmp 目录下执行）
-    log_info "步骤 11: 渲染并应用 jaeger.yaml"
+    # 步骤 12: envsubst 渲染并 apply（需在 /tmp 目录下执行）
+    log_info "步骤 12: 渲染并应用 jaeger.yaml"
     kubectl_apply_runme_block "install-tracing-elasticsearch:apply-jaeger" "/tmp/" || {
         log_error "应用 jaeger.yaml 失败"
         return 1
     }
 
-    # 步骤 11.1: 等待 OpenTelemetryCollector 状态副本数收敛
-    log_info "步骤 11.1: 等待 OpenTelemetryCollector status.scale.statusReplicas=1/1"
+    # 步骤 12.1: 等待 OpenTelemetryCollector 状态副本数收敛
+    log_info "步骤 12.1: 等待 OpenTelemetryCollector status.scale.statusReplicas=1/1"
     kubectl wait "opentelemetrycollector/${JAEGER_INSTANCE_NAME}" \
         -n "${JAEGER_NS}" \
         --for=jsonpath='{.status.scale.statusReplicas}'=1/1 \
@@ -283,57 +296,57 @@ test_installing_distributed_tracing_elasticsearch() {
         return 1
     }
 
-    # 步骤 12: 等待 Jaeger collector deployment 就绪
-    log_info "步骤 12: 等待 Jaeger collector 就绪"
+    # 步骤 13: 等待 Jaeger collector deployment 就绪
+    log_info "步骤 13: 等待 Jaeger collector 就绪"
     runme run install-tracing-elasticsearch:wait-jaeger-rollout || {
         log_error "等待 Jaeger collector 就绪失败"
         return 1
     }
 
-    # 步骤 13: 给命名空间打 cpaas.io/project 标签
-    log_info "步骤 13: 标记 Jaeger 命名空间"
+    # 步骤 14: 给命名空间打 cpaas.io/project 标签
+    log_info "步骤 14: 标记 Jaeger 命名空间"
     runme run install-tracing-elasticsearch:label-jaeger-ns || {
         log_error "标记命名空间失败"
         return 1
     }
 
-    # 步骤 14: 创建 Jaeger Ingress
-    log_info "步骤 14: 创建 Jaeger Ingress"
+    # 步骤 15: 创建 Jaeger Ingress
+    log_info "步骤 15: 创建 Jaeger Ingress"
     runme run install-tracing-elasticsearch:create-jaeger-ingress || {
         log_error "创建 Jaeger Ingress 失败"
         return 1
     }
 
-    # 步骤 14.1: 等待 Ingress LoadBalancer 就绪
-    log_info "步骤 14.1: 等待 Jaeger Ingress 就绪"
+    # 步骤 15.1: 等待 Ingress LoadBalancer 就绪
+    log_info "步骤 15.1: 等待 Jaeger Ingress 就绪"
     runme run install-tracing-elasticsearch:wait-jaeger-ingress || {
         log_error "等待 Jaeger Ingress 就绪失败"
         return 1
     }
 
-    # 步骤 15: 打印 Jaeger UI URL
-    log_info "步骤 15: 打印 Jaeger UI URL"
+    # 步骤 16: 打印 Jaeger UI URL
+    log_info "步骤 16: 打印 Jaeger UI URL"
     runme run install-tracing-elasticsearch:print-jaeger-url || {
         log_error "打印 Jaeger UI URL 失败"
         return 1
     }
 
-    # 步骤 16: 生成 otel-collector.yaml 到 /tmp
-    log_info "步骤 16: 生成 /tmp/otel-collector.yaml"
+    # 步骤 17: 生成 otel-collector.yaml 到 /tmp
+    log_info "步骤 17: 生成 /tmp/otel-collector.yaml"
     runme print install-tracing-elasticsearch:otel-collector-yaml > /tmp/otel-collector.yaml || {
         log_error "生成 otel-collector.yaml 失败"
         return 1
     }
 
-    # 步骤 16.1: envsubst 渲染并 apply（需在 /tmp 目录下执行）
-    log_info "步骤 16.1: 渲染并应用 otel-collector.yaml"
+    # 步骤 17.1: envsubst 渲染并 apply（需在 /tmp 目录下执行）
+    log_info "步骤 17.1: 渲染并应用 otel-collector.yaml"
     kubectl_apply_runme_block "install-tracing-elasticsearch:apply-otel-collector" "/tmp/" || {
         log_error "应用 otel-collector.yaml 失败"
         return 1
     }
 
-    # 步骤 16.2: 等待 otel OpenTelemetryCollector 状态副本数收敛
-    log_info "步骤 16.2: 等待 otel OpenTelemetryCollector status.scale.statusReplicas=1/1"
+    # 步骤 17.2: 等待 otel OpenTelemetryCollector 状态副本数收敛
+    log_info "步骤 17.2: 等待 otel OpenTelemetryCollector status.scale.statusReplicas=1/1"
     kubectl wait "opentelemetrycollector/otel" \
         -n "${JAEGER_NS}" \
         --for=jsonpath='{.status.scale.statusReplicas}'=1/1 \
@@ -342,27 +355,27 @@ test_installing_distributed_tracing_elasticsearch() {
         return 1
     }
 
-    # 步骤 17: 等待 otel collector deployment 就绪
-    log_info "步骤 17: 等待 OpenTelemetry Collector 就绪"
+    # 步骤 18: 等待 otel collector deployment 就绪
+    log_info "步骤 18: 等待 OpenTelemetry Collector 就绪"
     runme run install-tracing-elasticsearch:wait-otel-collector-rollout || {
         log_error "等待 OpenTelemetry Collector 就绪失败"
         return 1
     }
 
-    # 步骤 18: 部署 telemetrygen 生成测试 trace（内含 wait/delete）
+    # 步骤 19: 部署 telemetrygen 生成测试 trace（内含 wait/delete）
     # --skip-telemetrygen 时跳过：用于 mesh 等仅需安装调用链组件、由
     # 业务流量产生 trace 而不依赖 telemetrygen 验证的编排场景。
     if [ "${SKIP_TELEMETRYGEN:-false}" = "true" ]; then
-        log_warn "SKIP_TELEMETRYGEN=true，跳过步骤 18 telemetrygen 端到端验证"
+        log_warn "SKIP_TELEMETRYGEN=true，跳过步骤 19 telemetrygen 端到端验证"
     else
-        log_info "步骤 18: 部署 telemetrygen 生成测试 trace"
+        log_info "步骤 19: 部署 telemetrygen 生成测试 trace"
         _deploy_telemetrygen "${TRACING_TELEMETRYGEN_TEST_DURATION_1:-30s}" || {
             log_error "telemetrygen 端到端验证失败"
             return 1
         }
     fi
 
-    # 步骤 19-26:（可选）Service Performance Monitoring (SPM) 章节
+    # 步骤 20-27:（可选）Service Performance Monitoring (SPM) 章节
     # SPM 需 ACP monitoring，默认跳过；设置 TRACING_TEST_SPM=true 启用。
     if [ "${TRACING_TEST_SPM:-true}" = "true" ]; then
         _test_spm || return 1

@@ -87,23 +87,27 @@ service:
 ```yaml
 exporters:
   prometheus:
-    add_metric_suffixes: false # Jaeger expects standard OTel metric names without _total suffixes
+    translation_strategy: UnderscoreEscapingWithoutSuffixes # keep OTel metric names without _total suffixes (add_metric_suffixes is deprecated and ignored since Jaeger v2.20.0 / collector-contrib v0.154.0)
     endpoint: "0.0.0.0:8889"
     resource_to_telemetry_conversion:
       enabled: true
 
 connectors:
-  spanmetrics:
+  span_metrics:
     # connector configuration options
 
 service:
   pipelines:
     traces:
-      exporters: [jaeger_storage_exporter, spanmetrics]
+      exporters: [jaeger_storage_exporter, span_metrics]
     metrics/spanmetrics:
-      receivers: [spanmetrics]
+      receivers: [span_metrics]
       exporters: [prometheus]
 ```
+
+:::note
+The exporter and the Jaeger metrics reader must agree on metric names. By default Jaeger queries suffix-less names such as `traces_span_metrics_calls` (the `normalize_calls` and `normalize_duration` options of the `prometheus` metric backend default to `false`), so the exporter must not append Prometheus-style suffixes. Set `translation_strategy: UnderscoreEscapingWithoutSuffixes` explicitly for this: the older `add_metric_suffixes: false` option is deprecated and silently ignored since Jaeger v2.20.0 (collector-contrib v0.154.0), which would rename the metrics to `traces_span_metrics_calls_total` and break the Monitor tab.
+:::
 
 Define a remote PromQL-compatible storage in Jaeger:
 
