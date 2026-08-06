@@ -381,8 +381,6 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
                       password_file: /etc/jaeger/es-credentials/pass
                   tls:
                     insecure_skip_verify: true
-                  use_aliases: true
-                  use_ilm: true
                   service_cache_ttl: 12h # [!code callout]
                   create_mappings: false # [!code callout]
                   indices:
@@ -390,15 +388,23 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
                     spans:
                       shards: 5
                       replicas: 1
+                      rotation: # [!code callout]
+                        auto_rollover: {}
                     services:
                       shards: 5
                       replicas: 1
+                      rotation:
+                        auto_rollover: {}
                     dependencies:
                       shards: 5
                       replicas: 1
+                      rotation:
+                        auto_rollover: {}
                     sampling:
                       shards: 5
                       replicas: 1
+                      rotation:
+                        auto_rollover: {}
 
           jaeger_query: # [!code callout]
             storage:
@@ -478,11 +484,12 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
       4. Resource requests and limits for the Jaeger container. Adjust based on your expected trace volume; higher throughput environments may require more CPU and memory.
       5. The `jaeger_storage` extension configures the [Elasticsearch backend](../configuration/storage-backends/elasticsearch.mdx#configuration) for storing trace data.
       6. `service_cache_ttl` controls how long the service name cache is kept. The default is `12h`. If the ILM hot-to-delete interval is short, reduce this value to ensure the Jaeger UI can discover services promptly.
-      7. `create_mappings` must be set to `false` when using ILM mode, because index mappings are managed by the rollover initialization.
+      7. `create_mappings` must be set to `false` when using the `auto_rollover` rotation strategy, because index templates and mappings are managed by the rollover initialization.
       8. `index_prefix` must match the prefix used during the `jaeger-es-rollover` initialization in step 6. For more details on shards and replicas tuning, see [Shards and Replicas](../configuration/storage-backends/elasticsearch.mdx#shards-and-replicas).
-      9. The `jaeger_query` extension serves the Jaeger Query API and the Jaeger UI.
-      10. The `additionalContainers` section defines the OAuth2 Proxy sidecar, which handles authentication for the Jaeger UI by integrating with the Alauda Container Platform Dex identity provider.
-      11. Resource requests and limits for the OAuth2 Proxy sidecar. This container has low resource requirements since it only proxies authentication requests.
+      9. The `rotation.auto_rollover` strategy uses read/write aliases and relies on the ILM policy (created in step 5) to trigger index rollover automatically. The default alias names match those created by the `jaeger-es-rollover` initialization in step 6. It replaces the legacy `use_aliases`/`use_ilm` flags, which are rejected since Jaeger v2.20.0.
+      10. The `jaeger_query` extension serves the Jaeger Query API and the Jaeger UI.
+      11. The `additionalContainers` section defines the OAuth2 Proxy sidecar, which handles authentication for the Jaeger UI by integrating with the Alauda Container Platform Dex identity provider.
+      12. Resource requests and limits for the OAuth2 Proxy sidecar. This container has low resource requirements since it only proxies authentication requests.
     </Callouts>
 
 10. Render the manifest with `envsubst` and apply the configuration:

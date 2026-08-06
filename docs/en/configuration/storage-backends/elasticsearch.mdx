@@ -24,7 +24,11 @@ Shards and replicas are some configuration values to take special attention to, 
 
 ## Index Rollover \{#index-rollover}
 
-[Elasticsearch rollover](https://www.elastic.co/guide/en/elasticsearch/reference/master/indices-rollover-index.html) is an index management strategy that optimizes use of resources allocated to indices. For example, indices that do not contain any data still allocate shards, and conversely, a single index might contain significantly more data than the others. Rollover feature can be enabled by `use_aliases: true` config property.
+[Elasticsearch rollover](https://www.elastic.co/guide/en/elasticsearch/reference/master/indices-rollover-index.html) is an index management strategy that optimizes use of resources allocated to indices. For example, indices that do not contain any data still allocate shards, and conversely, a single index might contain significantly more data than the others. Rollover feature can be enabled by configuring an alias-based rotation strategy (`rotation.manual_rollover` or `rotation.auto_rollover`) under `indices.<type>` for each index type.
+
+:::warning
+The legacy rotation flags (`use_aliases`, `use_ilm`, `span_read_alias`, `span_write_alias`, `service_read_alias`, `service_write_alias`) are rejected since Jaeger v2.20.0 and cause the collector to fail at startup. Migrate to the `indices.<type>.rotation` configuration described below.
+:::
 
 Rollover lets you configure when to roll over to a new index based on one or more of the following criteria:
 
@@ -46,7 +50,23 @@ nerdctl run -it --rm --net=host \
 
 If you need to initialize archive storage, add `-e ARCHIVE=true`.
 
-After the initialization Jaeger can be deployed with `use_aliases: true`.
+After the initialization Jaeger can be deployed with the `manual_rollover` rotation strategy on each index type. The default read/write alias names match the aliases created by the initialization:
+
+```yaml
+indices:
+  spans:
+    rotation:
+      manual_rollover: {}
+  services:
+    rotation:
+      manual_rollover: {}
+  dependencies:
+    rotation:
+      manual_rollover: {}
+  sampling:
+    rotation:
+      manual_rollover: {}
+```
 
 ### ILM support \{#ilm-support}
 
@@ -113,4 +133,22 @@ For example:
     "ILM policy jaeger-ilm-policy doesn't exist in Elasticsearch. Please create it and rerun init"
     :::
 
-After the initialization, deploy Jaeger with `use_ilm: true` and `use_aliases: true`.
+After the initialization, deploy Jaeger with the `auto_rollover` rotation strategy on each index type. Rollover and retention are then managed automatically by the ILM policy, and no external cron jobs are required:
+
+```yaml
+indices:
+  spans:
+    rotation:
+      auto_rollover: {}
+  services:
+    rotation:
+      auto_rollover: {}
+  dependencies:
+    rotation:
+      auto_rollover: {}
+  sampling:
+    rotation:
+      auto_rollover: {}
+```
+
+When `create_mappings: false` is set (index templates are created by the `es-rollover` init job), leave `rotation.auto_rollover.policy_name` empty; the ILM policy reference is already embedded in the index templates by the initialization.
