@@ -311,7 +311,9 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
               exporters: [debug, jaeger_storage_exporter]
           telemetry:
             resource:
-              service.name: jaeger
+              attributes:
+                - name: service.name
+                  value: jaeger
             metrics:
               level: detailed
               readers:
@@ -781,7 +783,7 @@ Enabling SPM requires running the SpanMetrics Connector **inside Jaeger** to gen
           readOnly: true
       config:
         connectors:
-          spanmetrics: {} # [!code callout]
+          span_metrics: {} # [!code callout]
         exporters:
           prometheus: # [!code callout]
             translation_strategy: UnderscoreEscapingWithoutSuffixes # keep OTel metric names without _total suffixes (add_metric_suffixes is deprecated and ignored since Jaeger v2.20.0 / collector-contrib v0.154.0)
@@ -809,22 +811,22 @@ Enabling SPM requires running the SpanMetrics Connector **inside Jaeger** to gen
           extensions: [basicauth/monitoring, healthcheckv2, jaeger_storage, jaeger_query] # [!code callout]
           pipelines:
             traces: # [!code callout]
-              exporters: [debug, jaeger_storage_exporter, spanmetrics]
+              exporters: [debug, jaeger_storage_exporter, span_metrics]
             metrics/spanmetrics:
-              receivers: [spanmetrics]
+              receivers: [span_metrics]
               exporters: [prometheus]
     ```
 
     <Callouts>
       1. The `monitoring-credentials` volume mounts the monitoring basic-auth credentials into the Jaeger container.
       2. The `monitoring-credentials` volumeMount makes the credentials available at `/etc/jaeger/monitoring-credentials/`.
-      3. The `spanmetrics` connector generates RED metrics from the spans Jaeger receives. Because the Collector routes each service to a single Jaeger replica, every replica aggregates a disjoint set of services correctly.
+      3. The `span_metrics` connector generates RED metrics from the spans Jaeger receives. Because the Collector routes each service to a single Jaeger replica, every replica aggregates a disjoint set of services correctly.
       4. The `prometheus` exporter exposes the generated metrics on port `8889`. The Jaeger instance already carries the `prometheus: kube-prometheus` label and `observability.metrics.enableMetrics: true` (set in `jaeger.yaml`), so the Operator automatically creates a `ServiceMonitor` that lets ACP Prometheus scrape this endpoint.
       5. The `basicauth/monitoring` extension provides basic authentication for the monitoring metrics endpoint.
       6. The `metric_backends` section configures the PromQL-compatible metrics storage that Jaeger queries for SPM data.
       7. Reference the metrics store in the `jaeger_query` extension.
       8. The `basicauth/monitoring` extension must be added to the `service.extensions` list to be active.
-      9. The `traces` pipeline now also exports to `spanmetrics` (storage plus metrics generation), and a dedicated `metrics/spanmetrics` pipeline forwards the generated metrics to the `prometheus` exporter.
+      9. The `traces` pipeline now also exports to `span_metrics` (storage plus metrics generation), and a dedicated `metrics/spanmetrics` pipeline forwards the generated metrics to the `prometheus` exporter.
     </Callouts>
 
     :::warning

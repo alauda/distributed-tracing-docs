@@ -93,15 +93,15 @@ exporters:
       enabled: true
 
 connectors:
-  spanmetrics:
+  span_metrics:
     # connector configuration options
 
 service:
   pipelines:
     traces:
-      exporters: [jaeger_storage_exporter, spanmetrics]
+      exporters: [jaeger_storage_exporter, span_metrics]
     metrics/spanmetrics:
-      receivers: [spanmetrics]
+      receivers: [span_metrics]
       exporters: [prometheus]
 ```
 

@@ -37,11 +37,12 @@ _spm_ha_precheck() {
         log_error "前置 otel 未配置 loadbalancing(routing_key=service)，当前值: '${rk}'"
         return 1
     fi
+    # glob 同时兼容新名 span_metrics（Jaeger v2.20.0+ 正式名）与旧别名 spanmetrics
     case "$connectors" in
-        *spanmetrics*) ;;
-        *) log_error "Jaeger 实例 '${JAEGER_INSTANCE_NAME}' 未配置 spanmetrics connector"; return 1 ;;
+        *span*metrics*) ;;
+        *) log_error "Jaeger 实例 '${JAEGER_INSTANCE_NAME}' 未配置 span_metrics connector"; return 1 ;;
     esac
-    log_success "前置检查通过：otel loadbalancing(routing_key=service) + jaeger spanmetrics"
+    log_success "前置检查通过：otel loadbalancing(routing_key=service) + jaeger span_metrics"
     return 0
 }
 
