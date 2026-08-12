@@ -53,7 +53,7 @@
 | 索引分片 | **shards = 5，replicas = 1**（默认） |
 | 数据保留 | `JAEGER_INDEX_RETENTION_DAYS` = **7 天**（由 `jaeger-es-index-cleaner` CronJob 每日 `30 2 * * *` 删除 7 天前索引，实测 args=`["7", ...]`） |
 | 采样 | **100% 全采样**：应用侧 `acp-common-java` Instrumentation（`otelv2-java-demo` NS）配置 `sampler.type=parentbased_traceidratio`、`argument=1`；OTel Collector 无采样处理器 → 追踪数据无缩减（`sr=1`）。实测 100 请求 → 300 span 一一对应，印证全采样、无丢失。 |
-| 应用上报 | 应用经 OTLP/HTTP 上报至 `otel-collector.jaeger-system.svc:4318`（`otel` collector）→ `loadbalancing` 转发 `jaeger-collector`（`jaeger` collector）→ `jaeger_storage_exporter` 写入 OpenSearch |
+| 应用上报 | 应用经 OTLP/HTTP 上报至 `otel-collector.jaeger-system.svc:4318`（`otel` collector）→ `load_balancing` 转发 `jaeger-collector`（`jaeger` collector）→ `jaeger_storage_exporter` 写入 OpenSearch |
 | 实时监控 | ACP kube-prometheus 已采集两个 collector 的内部指标（`otelcol_*`），可实时估算每日 span 吞吐与落库量（见第七章「方法 A」） |
 | 测试链路 | `asm-client` → `otel-demo-consumer-for-test` → `otel-demo-provider-for-test`，单请求产生 **3 个 span** |
 
@@ -204,7 +204,7 @@ OTel Collector 内部遥测指标（`otelcol_*`）已被 ACP kube-prometheus 采
 
 | collector | Prometheus `job` | 作用 | 关键指标 |
 |---|---|---|---|
-| `otel` | `otel-collector-monitoring` | 接收应用 span，`loadbalancing` 转发 | `otelcol_receiver_accepted_spans`（应用侧入口流量）|
+| `otel` | `otel-collector-monitoring` | 接收应用 span，`load_balancing` 转发 | `otelcol_receiver_accepted_spans`（应用侧入口流量）|
 | `jaeger` | `jaeger-collector-monitoring` | 接收后经 `jaeger_storage_exporter` **写入 OpenSearch** | `otelcol_exporter_sent_spans{exporter="jaeger_storage_exporter"}`（**落库量，容量核心**）|
 
 > ⚠️ traces 管道同时挂了 `debug` exporter，`sum(otelcol_exporter_sent_spans)` 会**重复计数**，**必须用 `exporter="jaeger_storage_exporter"` 过滤**，只取写入 OpenSearch 的那一路。

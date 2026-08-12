@@ -693,7 +693,7 @@ After installing all components, verify the end-to-end tracing pipeline by gener
 
 Service Performance Monitoring (SPM) surfaces in the Jaeger UI as the **Monitor** tab, aggregating span data to produce RED (Request, Error, Duration) metrics. This enables you to identify performance issues without requiring prior knowledge of service or operation names. For more details, see [Service Performance Monitoring (SPM)](../configuration/spm.mdx).
 
-Enabling SPM requires running the SpanMetrics Connector **inside Jaeger** to generate the RED metrics, and routing spans from the front OpenTelemetry Collector to Jaeger through a `loadbalancing` exporter so the metrics stay accurate even when both components run with multiple replicas. Jaeger exposes the metrics on a Prometheus endpoint and serves them back to the Monitor tab through a PromQL-compatible backend.
+Enabling SPM requires running the SpanMetrics Connector **inside Jaeger** to generate the RED metrics, and routing spans from the front OpenTelemetry Collector to Jaeger through a `load_balancing` exporter so the metrics stay accurate even when both components run with multiple replicas. Jaeger exposes the metrics on a Prometheus endpoint and serves them back to the Monitor tab through a PromQL-compatible backend.
 
 **Prerequisites**
 
@@ -722,14 +722,14 @@ Enabling SPM requires running the SpanMetrics Connector **inside Jaeger** to gen
       --dry-run=client -o yaml | kubectl apply -f -
     ```
 
-3. Patch the OpenTelemetry Collector to forward spans to Jaeger through a `loadbalancing` exporter instead of the direct `otlp/traces` exporter. With `routing_key: service`, all spans of a given service are consistently sent to the same Jaeger replica, so the SpanMetrics Connector running inside Jaeger (next step) aggregates each service exactly once. This is what keeps the metrics correct when the Collector or Jaeger runs with more than one replica:
+3. Patch the OpenTelemetry Collector to forward spans to Jaeger through a `load_balancing` exporter instead of the direct `otlp/traces` exporter. With `routing_key: service`, all spans of a given service are consistently sent to the same Jaeger replica, so the SpanMetrics Connector running inside Jaeger (next step) aggregates each service exactly once. This is what keeps the metrics correct when the Collector or Jaeger runs with more than one replica:
 
     ```bash {name=install-tracing-elasticsearch-spm:patch-otel-collector}
     kubectl patch opentelemetrycollector otel -n ${JAEGER_NS} --type=merge -p "
     spec:
       config:
         exporters:
-          loadbalancing:
+          load_balancing:
             routing_key: service
             protocol:
               otlp:
@@ -742,7 +742,7 @@ Enabling SPM requires running the SpanMetrics Connector **inside Jaeger** to gen
         service:
           pipelines:
             traces:
-              exporters: [debug, loadbalancing]
+              exporters: [debug, load_balancing]
     "
     ```
 

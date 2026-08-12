@@ -79,8 +79,8 @@ _test_spm() {
         return 1
     }
 
-    # 步骤 22: Patch OpenTelemetry Collector 改用 loadbalancing 按 service 路由到 Jaeger（spanmetrics 已移至 Jaeger）
-    log_info "步骤 22: Patch OpenTelemetry Collector 配置 loadbalancing 按 service 路由"
+    # 步骤 22: Patch OpenTelemetry Collector 改用 load_balancing 按 service 路由到 Jaeger（spanmetrics 已移至 Jaeger）
+    log_info "步骤 22: Patch OpenTelemetry Collector 配置 load_balancing 按 service 路由"
     runme run install-tracing-elasticsearch-spm:patch-otel-collector || {
         log_error "Patch OpenTelemetry Collector 失败"
         return 1
