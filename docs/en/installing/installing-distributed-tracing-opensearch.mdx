@@ -322,9 +322,6 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
                       prometheus:
                         host: "0.0.0.0"
                         port: 8888
-                        without_scope_info: true
-                        without_type_suffix: true
-                        without_units: true
             logs:
               level: info
 
@@ -606,9 +603,6 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
                     prometheus:
                       host: 0.0.0.0
                       port: 8888
-                      without_scope_info: true
-                      without_type_suffix: true
-                      without_units: true
     ```
 
     <Callouts>

@@ -390,9 +390,6 @@ spec:
                   prometheus:
                     host: 0.0.0.0
                     port: 8888
-                    without_scope_info: true
-                    without_type_suffix: true
-                    without_units: true
         logs:
           level: info
 ```
