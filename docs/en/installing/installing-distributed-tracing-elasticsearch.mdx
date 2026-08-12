@@ -423,10 +423,6 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
               processors: [memory_limiter, batch]
               exporters: [debug, jaeger_storage_exporter]
           telemetry:
-            resource:
-              attributes:
-                - name: service.name
-                  value: jaeger
             metrics:
               level: detailed
               readers:
