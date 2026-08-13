@@ -594,7 +594,7 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
             spike_limit_percentage: 20
         exporters:
           debug: {}
-          otlp/traces: # [!code callout]
+          otlp_grpc/traces: # [!code callout]
             endpoint: "${JAEGER_INSTANCE_NAME}-collector.${JAEGER_NS}.svc.cluster.local:4317"
             tls:
               insecure: true
@@ -608,7 +608,7 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
             traces:
               receivers: [otlp, zipkin]
               processors: [memory_limiter, batch]
-              exporters: [debug, otlp/traces] # [!code callout]
+              exporters: [debug, otlp_grpc/traces] # [!code callout]
             metrics:
               receivers: [otlp]
               processors: [memory_limiter, batch]
@@ -628,9 +628,13 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
       2. Resource requests and limits for the Collector container. Adjust based on your expected trace throughput.
       3. Enables the Operator to automatically create `ServiceMonitor` resources for the Collector's metrics endpoint.
       4. The OTLP receiver accepts trace data over gRPC (port `4317`) and HTTP (port `4318`) from instrumented applications.
-      5. The `otlp/traces` exporter forwards received traces to the Jaeger collector service. The endpoint is derived from the Jaeger instance name and namespace.
-      6. The trace pipeline receives data via OTLP and Zipkin, processes it through `memory_limiter` and `batch`, and exports to both the `debug` exporter (for logging) and `otlp/traces` (for forwarding to Jaeger).
+      5. The `otlp_grpc/traces` exporter forwards received traces to the Jaeger collector service. The endpoint is derived from the Jaeger instance name and namespace.
+      6. The trace pipeline receives data via OTLP and Zipkin, processes it through `memory_limiter` and `batch`, and exports to both the `debug` exporter (for logging) and `otlp_grpc/traces` (for forwarding to Jaeger).
     </Callouts>
+
+    :::note The OTLP gRPC exporter is named `otlp_grpc`
+    The exporter type name is `otlp_grpc`, not `otlp`. The former name still works as a deprecated alias, but the Collector then logs the following at startup for each affected component instance, and upstream intends to remove the alias in a future release.
+    :::
 
 2. Render the manifest with `envsubst` and apply the configuration:
 
@@ -726,17 +730,18 @@ Enabling SPM requires running the SpanMetrics Connector **inside Jaeger** to gen
       --dry-run=client -o yaml | kubectl apply -f -
     ```
 
-3. Patch the OpenTelemetry Collector to forward spans to Jaeger through a `load_balancing` exporter instead of the direct `otlp/traces` exporter. With `routing_key: service`, all spans of a given service are consistently sent to the same Jaeger replica, so the SpanMetrics Connector running inside Jaeger (next step) aggregates each service exactly once. This is what keeps the metrics correct when the Collector or Jaeger runs with more than one replica:
+3. Patch the OpenTelemetry Collector to forward spans to Jaeger through a `load_balancing` exporter, replacing the direct `otlp_grpc/traces` exporter. With `routing_key: service`, all spans of a given service are consistently sent to the same Jaeger replica, so the SpanMetrics Connector running inside Jaeger (next step) aggregates each service exactly once. This is what keeps the metrics correct when the Collector or Jaeger runs with more than one replica:
 
     ```bash {name=install-tracing-elasticsearch-spm:patch-otel-collector}
     kubectl patch opentelemetrycollector otel -n ${JAEGER_NS} --type=merge -p "
     spec:
       config:
         exporters:
+          otlp_grpc/traces: null # remove the direct exporter, replaced by load_balancing
           load_balancing:
             routing_key: service
             protocol:
-              otlp:
+              otlp: # a configuration field of the load_balancing exporter, not a component type name
                 tls:
                   insecure: true
             resolver:
