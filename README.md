@@ -40,3 +40,12 @@ $ yarn install
 # 用法: ./hack/update-jaeger-image-tag.sh <新tag>
 ./hack/update-jaeger-image-tag.sh 2.17.0-r0
 ```
+
+### Jaeger 新版本内容同步更新
+
+让 AI 读取当前版本到新版本更新的内容：https://github.com/jaegertracing/jaeger/releases。
+然后分析当前文档是否有需要同步更新的部分，review 后执行更新。
+
+### sites.yaml 更新
+
+更新 [sites.yaml](./sites.yaml) 中的最新外链站点。
