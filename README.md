@@ -21,20 +21,23 @@ $ yarn install
 
 ## Jaeger 版本更新
 
-当 Jaeger 发布新版本时，需要更新文档中的版本号和镜像 tag。`hack/` 目录提供了两个脚本来自动完成此操作。
+当 Jaeger 发布新版本时，可以使用 `hack/update-jaeger-version.sh` 更新相关 MDX 文档中的版本号。
 
 ### 更新 Jaeger 版本号
 
-更新文档中的 Jaeger 版本引用（如 GitHub 链接中的 tag）：
+脚本接收旧版本和新版本两个参数，推荐使用不带 `v` 的 `x.y.z` 格式（同时兼容带 `v` 的格式）：
 
 ```bash
 # 用法: ./hack/update-jaeger-version.sh <旧版本> <新版本>
-./hack/update-jaeger-version.sh v2.16.0 v2.17.0
+./hack/update-jaeger-version.sh 2.20.0 2.24.0
 ```
 
-### 更新 migrating-from-acp-tracing.mdx 文档
+脚本只更新以下内容：
 
-更新 [migrating-from-acp-tracing.mdx](./docs/en/migrating/migrating-from-acp-tracing.mdx) 中的 `kubectl get opentelemetrycollector -A` 命令执行示例结果为最新，包括：`VERSION` 和 `IMAGE`。
+- `docs/en/**/*.mdx` 中以 `https://github.com/alauda-mesh/jaeger/tree/v<旧版本>/` 开头的链接；
+- [migrating-from-acp-tracing.mdx](./docs/en/migrating/migrating-from-acp-tracing.mdx) 中出现的旧版本，包括正文、表格以及命令输出示例中的镜像 tag。
+
+其他 MDX 文档中的版本说明不会被修改，以免覆盖与特定 Jaeger 版本相关的历史或行为说明。
 
 ### Jaeger 新版本内容同步更新
 
