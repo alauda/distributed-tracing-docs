@@ -131,3 +131,7 @@ extensions:
     traces: some_trace_storage
     metrics: some_metrics_storage
 ```
+
+:::note
+Once a metrics store is referenced by `jaeger_query`, the **Monitor** tab appears in the Jaeger UI automatically. Its visibility is derived from the storage capabilities reported by the backend, so no additional Jaeger UI configuration file is required.
+:::

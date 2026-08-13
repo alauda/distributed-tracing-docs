@@ -22,6 +22,26 @@ A sample configuration for Jaeger with Elasticsearch backend is available in the
 
 Shards and replicas are some configuration values to take special attention to, because this is decided upon index creation. [This article](https://www.elastic.co/blog/how-many-shards-should-i-have-in-my-elasticsearch-cluster) goes into more information about choosing how many shards should be chosen for optimization.
 
+### Query Time Range \{#query-time-range}
+
+Two options control the time window that the query service scans when reading spans:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `max_span_age` | `72h` | Maximum lookback for span reads. With alias-based rotation (`manual_rollover` or `auto_rollover`), set it to match the retention of the ILM policy, otherwise the Jaeger UI cannot find traces that are still stored. |
+| `max_trace_duration` | `24h` | Maximum expected duration of a single trace, that is, the time between its earliest and latest span. The reader widens the time-range filter by this value on both sides, so that all spans of a trace are found even when the trace extends beyond the requested search window. |
+
+For example, to align the lookback with an ILM policy that deletes indices after 7 days and to restrict the padding to traces no longer than one hour:
+
+```yaml
+max_span_age: 168h
+max_trace_duration: 1h
+```
+
+:::warning
+Before Jaeger v2.20.0 the time-range padding was hardcoded to ±1h. Since v2.20.0 it is configurable through `max_trace_duration` and defaults to **±24h**. This finds traces whose spans straddle index boundaries more reliably, but it also widens every query. With time-based indices (`rotation.periodic`) one extra index is scanned on each side of the requested range, which increases query cost. If your traces are short-lived, lower `max_trace_duration` accordingly.
+:::
+
 ## Index Management Strategies \{#index-management-strategies}
 
 Jaeger supports three index management strategies, selected with the `rotation` configuration under `indices.<type>` (for each of `spans`, `services`, `dependencies`, and `sampling`). At most one strategy can be set per index type; when no `rotation` is configured, time-based indices are used.
@@ -62,11 +82,17 @@ To learn more about rollover index management in Jaeger refer to this [article](
 
 ### Initialize \{#initialize}
 
+The `jaeger-es-rollover` image address is published by the Alauda Build of Jaeger v2 cluster plugin in the `jaeger-cluster-plugin-manifest` ConfigMap, so that it always matches the deployed Jaeger version:
+
+```bash
+export JAEGER_ES_ROLLOVER_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest -o jsonpath='{.data.jaeger-es-rollover-image}')
+```
+
 The following command prepares Elasticsearch for rollover deployment:
 
 ```bash
 nerdctl run -it --rm --net=host \
-  build-harbor.alauda.cn/asm/jaeger-es-rollover:2.16.0-r1 \
+  ${JAEGER_ES_ROLLOVER_IMAGE} \
   init http://localhost:9200
 ```
 
@@ -133,7 +159,7 @@ For example:
     ```bash
     nerdctl run -it --rm --net=host \
       -e ES_USE_ILM=true \
-      build-harbor.alauda.cn/asm/jaeger-es-rollover:2.16.0-r1 \
+      ${JAEGER_ES_ROLLOVER_IMAGE} \
       init http://localhost:9200
     ```
 

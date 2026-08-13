@@ -141,6 +141,8 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     export JAEGER_ES_INDEX_PREFIX="acp-${CLUSTER_NAME}"
     # Maximum age of spans the Jaeger query service will search. Keep aligned with the index-cleaner retention.
     export JAEGER_MAX_SPAN_AGE="168h"
+    # Maximum expected duration of a single trace. Controls how far beyond the search window spans are looked up.
+    export JAEGER_MAX_TRACE_DURATION="1h"
     # Base path for the Jaeger UI
     export JAEGER_BASEPATH="/clusters/${CLUSTER_NAME}/jaeger"
     ```
@@ -270,28 +272,37 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
                     insecure_skip_verify: true
                   service_cache_ttl: 12h # [!code callout]
                   max_span_age: "${JAEGER_MAX_SPAN_AGE}" # [!code callout]
+                  max_trace_duration: "${JAEGER_MAX_TRACE_DURATION}" # [!code callout]
                   indices:
                     index_prefix: "${JAEGER_ES_INDEX_PREFIX}" # [!code callout]
                     spans:
-                      date_layout: "2006-01-02"
-                      rollover_frequency: "day" # [!code callout]
                       shards: 5
                       replicas: 1
+                      rotation: # [!code callout]
+                        periodic:
+                          date_layout: "2006-01-02"
+                          rollover_frequency: "day"
                     services:
-                      date_layout: "2006-01-02"
-                      rollover_frequency: "day"
                       shards: 5
                       replicas: 1
+                      rotation:
+                        periodic:
+                          date_layout: "2006-01-02"
+                          rollover_frequency: "day"
                     dependencies:
-                      date_layout: "2006-01-02"
-                      rollover_frequency: "day"
                       shards: 5
                       replicas: 1
+                      rotation:
+                        periodic:
+                          date_layout: "2006-01-02"
+                          rollover_frequency: "day"
                     sampling:
-                      date_layout: "2006-01-02"
-                      rollover_frequency: "day"
                       shards: 5
                       replicas: 1
+                      rotation:
+                        periodic:
+                          date_layout: "2006-01-02"
+                          rollover_frequency: "day"
 
           jaeger_query: # [!code callout]
             storage:
@@ -368,11 +379,12 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
       6. The `opensearch` driver selects the OpenSearch storage implementation. Jaeger uses the same implementation for OpenSearch as for Elasticsearch.
       7. `service_cache_ttl` controls how long the service name cache is kept. The default is `12h`. If the index retention is short, reduce this value to ensure the Jaeger UI can discover services promptly.
       8. `max_span_age` is the maximum age of spans the query service will search, set here from `JAEGER_MAX_SPAN_AGE`. Keep it aligned with the `jaeger-es-index-cleaner` retention so the UI does not query indices that have already been deleted.
-      9. `index_prefix` must match the `INDEX_PREFIX` used by the `jaeger-es-index-cleaner` CronJob, otherwise the cleaner cannot find the indices to delete. For more details on shards and replicas tuning, see [Shards and Replicas](../configuration/storage-backends/opensearch.mdx#shards-and-replicas).
-      10. `rollover_frequency: day` together with `date_layout` produces daily indices such as `${JAEGER_ES_INDEX_PREFIX}-jaeger-span-YYYY-MM-DD`. These plain daily indices (no rollover alias) are what the `jaeger-es-index-cleaner` matches by date suffix.
-      11. The `jaeger_query` extension serves the Jaeger Query API and the Jaeger UI.
-      12. The `additionalContainers` section defines the OAuth2 Proxy sidecar, which handles authentication for the Jaeger UI by integrating with the Alauda Container Platform Dex identity provider.
-      13. Resource requests and limits for the OAuth2 Proxy sidecar. This container has low resource requirements since it only proxies authentication requests.
+      9. `max_trace_duration` is the maximum expected duration of a single trace, set here from `JAEGER_MAX_TRACE_DURATION`. The query service widens the time-range filter by this value on both sides so that spans extending beyond the search window are still found. The default is `24h`, which always adds one extra daily index on each side of every query; lower it if your traces are short-lived. See [Query Time Range](../configuration/storage-backends/opensearch.mdx#query-time-range).
+      10. `index_prefix` must match the `INDEX_PREFIX` used by the `jaeger-es-index-cleaner` CronJob, otherwise the cleaner cannot find the indices to delete. For more details on shards and replicas tuning, see [Shards and Replicas](../configuration/storage-backends/opensearch.mdx#shards-and-replicas).
+      11. The `rotation.periodic` strategy with `date_layout: "2006-01-02"` and `rollover_frequency: day` produces daily indices such as `${JAEGER_ES_INDEX_PREFIX}-jaeger-span-YYYY-MM-DD`. These plain daily indices (no rollover alias) are what the `jaeger-es-index-cleaner` matches by date suffix. The equivalent `date_layout` and `rollover_frequency` fields directly under `indices.<type>` are deprecated since Jaeger v2.20.0; do not set both forms for the same index type, because that combination is rejected at startup.
+      12. The `jaeger_query` extension serves the Jaeger Query API and the Jaeger UI.
+      13. The `additionalContainers` section defines the OAuth2 Proxy sidecar, which handles authentication for the Jaeger UI by integrating with the Alauda Container Platform Dex identity provider.
+      14. Resource requests and limits for the OAuth2 Proxy sidecar. This container has low resource requirements since it only proxies authentication requests.
     </Callouts>
 
 7. Render the manifest with `envsubst` and apply the configuration:

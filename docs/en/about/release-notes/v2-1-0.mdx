@@ -1,0 +1,127 @@
+---
+weight: 10000
+---
+
+# Alauda Distributed Tracing v2.1.0
+
+Alauda Distributed Tracing v2.1.0 is delivered through Alauda Build of OpenTelemetry v2 Operator 0.156.0, integrating with the open source Jaeger 2.20.0. It provides a production-ready distributed tracing solution built on Jaeger v2, enabling teams to collect, store, and visualize traces across microservices on Alauda Container Platform.
+
+:::note
+Only the features documented on this site are supported. Undocumented features are currently unsupported. If you need assistance with a specific feature, contact Alauda support.
+:::
+
+## Supported Features
+
+- **[Jaeger v2 backend](../../architecture.mdx)**: The tracing backend is built on the OpenTelemetry Collector framework, supporting role-specific deployments including `collector` for receiving and storing trace data, and `query` for serving the Jaeger UI and query APIs. Jaeger ES Rollover manages Elasticsearch index lifecycle operations such as templates, aliases, and index rotation.
+
+- **Multi-protocol ingestion**: Accepts trace data from multiple protocols and formats, including OTLP (gRPC and HTTP), Jaeger (gRPC and Thrift), Zipkin (v1 and v2), and Kafka.
+
+- **[Storage backend](../../configuration/storage-backends/)**: Elasticsearch 8.x and OpenSearch 3.x are the supported storage backends. Elasticsearch uses index rollover with aliases and Index Lifecycle Management (ILM) for automatic retention and rotation, while OpenSearch uses daily time-based indices with the `jaeger-es-index-cleaner` for retention.
+
+- **Sampling strategies**: Supports head-based sampling with centralized remote configuration (both static and adaptive) and tail-based sampling for making sampling decisions after traces are complete.
+
+- **[Service Performance Monitoring (SPM)](../../configuration/spm.mdx)**: Monitors service performance trends by computing aggregate RED metrics (Request rate, Error rate, Duration) from trace data using the SpanMetrics Connector and a PromQL-compatible metrics backend.
+
+- **[Observability and metrics](../../configuration/jaeger-metrics.mdx)**: Jaeger v2 and OpenTelemetry Collector components expose Prometheus metrics by default, with automatic ServiceMonitor and PodMonitor creation for integration with the monitoring stack.
+
+- **[Deployment and management](../../installing/)**: Jaeger instances are deployed and managed through the OpenTelemetry Operator on Kubernetes. Both web console and CLI installation methods are supported, along with [taints and tolerations](../../installing/taints-and-tolerations.mdx) for pod scheduling.
+
+- **Integration**: Integrates with <ExternalSiteLink name="opentelemetry" href="/" children="Alauda Build of OpenTelemetry v2" /> for telemetry collection and forwarding, with <ExternalSiteLink name="servicemesh" href="/integration/observability/kiali.html" children="Alauda Service Mesh (Kiali)" /> for opening trace data from the service mesh console, and with Alauda Container Platform for authentication through OAuth2 Proxy.
+
+## New Features and Enhancements
+
+- **Alauda Build of Jaeger v2 cluster plugin**: The container images required by the tracing components are now delivered by a dedicated cluster plugin. Installing the plugin synchronizes the images to the built-in registry and publishes their addresses in the `jaeger-cluster-plugin-manifest` ConfigMap, so the installation procedure reads image addresses from the cluster instead of hard-coding them. See [Installing Alauda Distributed Tracing with Elasticsearch](../../installing/installing-distributed-tracing-elasticsearch.mdx).
+
+- **Horizontally scalable Service Performance Monitoring**: SPM can now be scaled out. A front OpenTelemetry Collector load-balances spans by `service` to the Jaeger tier, so that each `(service, operation)` time series is aggregated by a single writer and the RED metrics stay accurate even when both tiers run with multiple replicas. See [Service Performance Monitoring (SPM)](../../configuration/spm.mdx#configuration).
+
+- **Configurable query time range for Elasticsearch and OpenSearch**: The `max_trace_duration` option controls how far beyond the requested time window the query service looks for spans belonging to a trace, replacing the previously hardcoded padding. See [Query Time Range](../../configuration/storage-backends/elasticsearch.mdx#query-time-range).
+
+## Upgrade Notes
+
+This release moves from Alauda Build of OpenTelemetry v2 Operator 0.147.0 and Jaeger 2.16.0 to Operator 0.156.0 and Jaeger 2.20.0. The following changes can alter the behavior of an existing configuration. Review them before upgrading.
+
+### Legacy Elasticsearch rotation flags are rejected
+
+The legacy rotation flags `use_aliases`, `use_ilm`, `span_read_alias`, `span_write_alias`, `service_read_alias`, and `service_write_alias` were previously accepted with a deprecation warning. Since Jaeger v2.20.0 they fail configuration validation, and the Jaeger instance does not start.
+
+Replace them with the `rotation` configuration under `indices.<type>`, for each of `spans`, `services`, `dependencies`, and `sampling`:
+
+```yaml
+indices:
+  spans:
+    rotation:
+      auto_rollover: {}
+```
+
+The default alias names of `auto_rollover` match the aliases created by `jaeger-es-rollover init`, and no data, alias, or ILM policy needs to be changed on the Elasticsearch side. When index templates are created by the rollover initialization (`create_mappings: false`), leave `auto_rollover.policy_name` empty. See [Index Management Strategies](../../configuration/storage-backends/elasticsearch.mdx#index-management-strategies).
+
+### `date_layout` and `rollover_frequency` moved under `rotation.periodic`
+
+The `date_layout` and `rollover_frequency` fields directly under `indices.<type>` are deprecated in favor of `rotation.periodic.date_layout` and `rotation.periodic.rollover_frequency`. Configurations that still use the old fields continue to work, but setting both forms for the same index type is rejected at startup, so move the fields rather than duplicating them:
+
+```yaml
+indices:
+  spans:
+    rotation:
+      periodic:
+        date_layout: "2006-01-02"
+        rollover_frequency: "day"
+```
+
+Index names are unaffected by this change.
+
+### The query time-range padding changed from ±1h to ±24h
+
+When reading spans, the Elasticsearch and OpenSearch query service widens the requested time window on both sides so that traces whose spans straddle index boundaries are returned in full. This padding was previously hardcoded to ±1h. It is now configurable through `max_trace_duration` and defaults to **24h**.
+
+The wider default improves correctness, but it also increases query cost: with time-based indices, one extra index is scanned on each side of every query. Set `max_trace_duration` to match your longest expected trace, for example `1h` to restore the previous behavior. See [Query Time Range](../../configuration/storage-backends/elasticsearch.mdx#query-time-range).
+
+### The `spanmetrics` connector is renamed to `span_metrics`
+
+In the Jaeger distribution, the `spanmetrics` connector type is deprecated in favor of `span_metrics`. The old name still works and is reported as a deprecation warning on startup. Update the `connectors` section and the pipelines that reference it:
+
+```yaml
+connectors:
+  span_metrics:
+
+service:
+  pipelines:
+    traces:
+      exporters: [jaeger_storage_exporter, span_metrics]
+    metrics/spanmetrics:
+      receivers: [span_metrics]
+      exporters: [prometheus]
+```
+
+:::warning
+This rename applies to the Jaeger distribution. A standalone OpenTelemetry Collector only registers `span_metrics` from Collector 0.152.0 onwards, so verify the Collector version before renaming the connector in a front Collector configuration.
+:::
+
+### The Prometheus exporter ignores `add_metric_suffixes`
+
+The `add_metric_suffixes` option of the `prometheus` exporter is deprecated and silently ignored. Jaeger queries suffix-less metric names such as `traces_span_metrics_calls`, so the exporter must not append Prometheus-style suffixes. Replace `add_metric_suffixes: false` with:
+
+```yaml
+exporters:
+  prometheus:
+    translation_strategy: UnderscoreEscapingWithoutSuffixes
+```
+
+Leaving the deprecated option in place renames the metrics to `traces_span_metrics_calls_total` and breaks the Monitor tab.
+
+### Internal metrics no longer need the `without_*` settings
+
+The `without_units`, `without_type_suffix`, and `without_scope_info` settings of the Prometheus reader under `service.telemetry.metrics` now default to `true`. Configurations that set them explicitly to `true` can drop them; the exposed metric names are unchanged.
+
+### `service.telemetry.resource` must remain a flat string map
+
+The OpenTelemetry Operator parses `spec.config.service.telemetry.resource` as a flat map of string values. If any value is a list or a nested map, the Operator silently discards the entire `service.telemetry` section, including `logs.level` and `metrics.level`. Jaeger already reports its own `service.name` and `service.version`, so the recommended configuration is to omit the `resource` block and keep only `logs` and `metrics`:
+
+```yaml
+service:
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: detailed
+```

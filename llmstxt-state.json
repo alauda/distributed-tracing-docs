@@ -40,11 +40,11 @@
       "updated_at": "2026-05-16T07:49:30Z"
     },
     "docs/en/about/lifecycle-policy/alauda-build-of-jaeger.mdx": {
-      "sha256": "c10278fecd0394a9ac85b37533f380a34835bac0c89f913b43c236a0b71a9c6c",
-      "size": 861,
-      "description": "Lifecycle schedule for Alauda Build of Jaeger, listing v2.0.z released 2026-04-21 with end of support 2027-10-21, a 4-month release cadence, and an 18-month maintenance window during which Alauda supplies bug-fix and security patches plus upgrade assistance.",
+      "sha256": "ca12e1618b5ed8eb023cb5add99a3b5bd8a38a032be93751473a3b23eb348947",
+      "size": 908,
+      "description": "Lifecycle schedule for Alauda Build of Jaeger, listing v2.0.z released 2026-04-21 with end of support 2027-10-21 and v2.1.z released 2026-08-21 with end of support 2028-02-21, a 4-month release cadence, and an 18-month maintenance window during which Alauda supplies bug-fix and security patches plus upgrade assistance.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T07:49:30Z"
+      "updated_at": "2026-08-12T00:00:00Z"
     },
     "docs/en/about/lifecycle-policy/alauda-build-of-opentelemetry.mdx": {
       "sha256": "2b989a2aa893b5ea8d9ccce7818fb36dc15cb1e42e665fdc4c9fc16e65ce23fb",
@@ -67,12 +67,12 @@
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-05-16T07:49:30Z"
     },
-    "docs/en/about/release-notes/v2-0-0.mdx": {
-      "sha256": "c342eb49d06ce8d3c3f60cf7e4230410dec2350bcbe0aa1da93638b9a5f9d19e",
-      "size": 4242,
-      "description": "Release notes for Alauda Distributed Tracing v2.0.0, the first independently released version, delivered through Alauda Build of OpenTelemetry v2 Operator 0.147.0 with Jaeger 2.16.0. Documents supported features (Jaeger v2 backend with collector and query roles, multi-protocol ingestion for OTLP, Jaeger, Zipkin and Kafka, Elasticsearch 8.x storage with ILM, head- and tail-based sampling, Service Performance Monitoring, Prometheus metrics, Operator-driven deployment) and new capabilities including the OpenTelemetry Collector-based architecture, unified Operator management, automated index rollover, and SPM via the SpanMetrics Connector.",
+    "docs/en/about/release-notes/v2-1-0.mdx": {
+      "sha256": "941c2c1d17fe9706f144c54a7a0efe5da49d36f1a11f522cb7ef2735dd86d7e5",
+      "size": 9233,
+      "description": "Release notes for Alauda Distributed Tracing v2.1.0, delivered through Alauda Build of OpenTelemetry v2 Operator 0.156.0 with Jaeger 2.20.0. Documents supported features (Jaeger v2 backend with collector and query roles, multi-protocol ingestion for OTLP, Jaeger, Zipkin and Kafka, Elasticsearch 8.x and OpenSearch 3.x storage, head- and tail-based sampling, Service Performance Monitoring, Prometheus metrics, Operator-driven deployment), new capabilities (Alauda Build of Jaeger v2 cluster plugin image delivery, horizontally scalable SPM, configurable max_trace_duration), and upgrade notes covering rejected legacy Elasticsearch rotation flags, the move of date_layout and rollover_frequency under rotation.periodic, the query time-range padding change from 1h to 24h, the spanmetrics to span_metrics rename, the ignored add_metric_suffixes option, redundant without_* telemetry settings, and the flat string map requirement for service.telemetry.resource.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T07:49:30Z"
+      "updated_at": "2026-08-12T00:00:00Z"
     },
     "docs/en/apis/index.mdx": {
       "sha256": "6fbb8970c1513fcd4ec4fd62ef265aad96e22688403da378b36260bbfb668d3b",
@@ -131,11 +131,11 @@
       "updated_at": "2026-05-16T07:49:30Z"
     },
     "docs/en/configuration/storage-backends/elasticsearch.mdx": {
-      "sha256": "32bdd2108986638d43c3827af76fc9323b2ce1a5b7ebccec091af3a85bb2a5d8",
-      "size": 5250,
-      "description": "Configures Elasticsearch 8.x as a Jaeger v2 storage backend, covering shard/replica sizing, index rollover initialization with the `jaeger-es-rollover:2.16.0-r1` container (`init http://localhost:9200`), and the `use_aliases: true` config flag. Documents Index Lifecycle Management (ILM) as an alternative to manual rollover, including a sample `jaeger-ilm-policy` curl PUT request defining hot rollover (`max_age`) and delete phases, plus the `ES_USE_ILM=true` env var and `use_ilm: true` Jaeger setting needed to activate it.",
+      "sha256": "0f6b41c62c130a2692791eef89b4b0756ed267b6f42e4026377009f68fdac159",
+      "size": 12132,
+      "description": "Configures Elasticsearch 8.x as a Jaeger v2 storage backend, covering shard/replica sizing, the `max_span_age` and `max_trace_duration` query time-range options, and the three index management strategies selected through `indices.<type>.rotation`: time-based indices (`rotation.periodic`), manual rollover (`rotation.manual_rollover`), and ILM-driven rollover (`rotation.auto_rollover`). Documents index rollover initialization with the `jaeger-es-rollover` container image read from the `jaeger-cluster-plugin-manifest` ConfigMap, a sample `jaeger-ilm-policy` curl PUT request defining hot rollover (`max_age`) and delete phases, and the `ES_USE_ILM=true` env var. Warns that the legacy rotation flags (`use_aliases`, `use_ilm`, and the read/write alias flags) are rejected since Jaeger v2.20.0 and must be migrated to the `rotation` configuration.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-05-16T07:49:30Z"
+      "updated_at": "2026-08-12T00:00:00Z"
     },
     "docs/en/configuration/storage-backends/index.mdx": {
       "sha256": "2e4b35120515609a6e751cf299794904aaa894ec14aacf9214c4b65657801bba",
