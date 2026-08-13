@@ -139,8 +139,6 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     export JAEGER_INSTANCE_NAME="jaeger"
     # Elasticsearch index prefix for Jaeger data
     export JAEGER_ES_INDEX_PREFIX="acp-${CLUSTER_NAME}"
-    # Maximum age of spans the Jaeger query service will search. Keep aligned with the ILM delete phase.
-    export JAEGER_MAX_SPAN_AGE="168h"
     # Maximum expected duration of a single trace. Controls how far beyond the search window spans are looked up.
     export JAEGER_MAX_TRACE_DURATION="1h"
     # Base path for the Jaeger UI
@@ -386,7 +384,6 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
                   tls:
                     insecure_skip_verify: true
                   service_cache_ttl: 12h # [!code callout]
-                  max_span_age: "${JAEGER_MAX_SPAN_AGE}" # [!code callout]
                   max_trace_duration: "${JAEGER_MAX_TRACE_DURATION}" # [!code callout]
                   create_mappings: false # [!code callout]
                   indices:
@@ -485,14 +482,13 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
       4. Resource requests and limits for the Jaeger container. Adjust based on your expected trace volume; higher throughput environments may require more CPU and memory.
       5. The `jaeger_storage` extension configures the [Elasticsearch backend](../configuration/storage-backends/elasticsearch.mdx#configuration) for storing trace data.
       6. `service_cache_ttl` controls how long the service name cache is kept. The default is `12h`. If the ILM hot-to-delete interval is short, reduce this value to ensure the Jaeger UI can discover services promptly.
-      7. `max_span_age` is the maximum age of spans the query service will search, set here from `JAEGER_MAX_SPAN_AGE`. The default is `72h`, which is shorter than the 7-day retention of the ILM policy created in step 5. Keep it aligned with the ILM delete phase so the Jaeger UI can search all the traces that are still stored.
-      8. `max_trace_duration` is the maximum expected duration of a single trace, set here from `JAEGER_MAX_TRACE_DURATION`. The query service widens the time-range filter by this value on both sides so that spans extending beyond the search window are still found. The default is `24h`; lower it if your traces are short-lived. See [Query Time Range](../configuration/storage-backends/elasticsearch.mdx#query-time-range).
-      9. `create_mappings` must be set to `false` when using the `auto_rollover` rotation strategy, because index templates and mappings are managed by the rollover initialization.
-      10. `index_prefix` must match the prefix used during the `jaeger-es-rollover` initialization in step 6. For more details on shards and replicas tuning, see [Shards and Replicas](../configuration/storage-backends/elasticsearch.mdx#shards-and-replicas).
-      11. The `rotation.auto_rollover` strategy uses read/write aliases and relies on the ILM policy (created in step 5) to trigger index rollover automatically. The default alias names match those created by the `jaeger-es-rollover` initialization in step 6. It replaces the legacy `use_aliases`/`use_ilm` flags, which are rejected since Jaeger v2.20.0.
-      12. The `jaeger_query` extension serves the Jaeger Query API and the Jaeger UI.
-      13. The `additionalContainers` section defines the OAuth2 Proxy sidecar, which handles authentication for the Jaeger UI by integrating with the Alauda Container Platform Dex identity provider.
-      14. Resource requests and limits for the OAuth2 Proxy sidecar. This container has low resource requirements since it only proxies authentication requests.
+      7. `max_trace_duration` is the maximum expected duration of a single trace, set here from `JAEGER_MAX_TRACE_DURATION`. The query service widens the time-range filter by this value on both sides so that spans extending beyond the search window are still found. The default is `24h`; lower it if your traces are short-lived. See [Query Time Range](../configuration/storage-backends/elasticsearch.mdx#query-time-range).
+      8. `create_mappings` must be set to `false` when using the `auto_rollover` rotation strategy, because index templates and mappings are managed by the rollover initialization.
+      9. `index_prefix` must match the prefix used during the `jaeger-es-rollover` initialization in step 6. For more details on shards and replicas tuning, see [Shards and Replicas](../configuration/storage-backends/elasticsearch.mdx#shards-and-replicas).
+      10. The `rotation.auto_rollover` strategy uses read/write aliases and relies on the ILM policy (created in step 5) to trigger index rollover automatically. The default alias names match those created by the `jaeger-es-rollover` initialization in step 6. It replaces the legacy `use_aliases`/`use_ilm` flags, which are rejected since Jaeger v2.20.0. Because the read alias always resolves to every index attached to it, `max_span_age` has no effect with this strategy and is deliberately left unset; retention is governed by the ILM policy alone.
+      11. The `jaeger_query` extension serves the Jaeger Query API and the Jaeger UI.
+      12. The `additionalContainers` section defines the OAuth2 Proxy sidecar, which handles authentication for the Jaeger UI by integrating with the Alauda Container Platform Dex identity provider.
+      13. Resource requests and limits for the OAuth2 Proxy sidecar. This container has low resource requirements since it only proxies authentication requests.
     </Callouts>
 
 10. Render the manifest with `envsubst` and apply the configuration:

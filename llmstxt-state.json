@@ -131,9 +131,9 @@
       "updated_at": "2026-05-16T07:49:30Z"
     },
     "docs/en/configuration/storage-backends/elasticsearch.mdx": {
-      "sha256": "0f6b41c62c130a2692791eef89b4b0756ed267b6f42e4026377009f68fdac159",
-      "size": 12132,
-      "description": "Configures Elasticsearch 8.x as a Jaeger v2 storage backend, covering shard/replica sizing, the `max_span_age` and `max_trace_duration` query time-range options, and the three index management strategies selected through `indices.<type>.rotation`: time-based indices (`rotation.periodic`), manual rollover (`rotation.manual_rollover`), and ILM-driven rollover (`rotation.auto_rollover`). Documents index rollover initialization with the `jaeger-es-rollover` container image read from the `jaeger-cluster-plugin-manifest` ConfigMap, a sample `jaeger-ilm-policy` curl PUT request defining hot rollover (`max_age`) and delete phases, and the `ES_USE_ILM=true` env var. Warns that the legacy rotation flags (`use_aliases`, `use_ilm`, and the read/write alias flags) are rejected since Jaeger v2.20.0 and must be migrated to the `rotation` configuration.",
+      "sha256": "43171e4667b27f6c5589a7f38d8a885b7a20dbc7f0a7f081e61f3605e6199c06",
+      "size": 12599,
+      "description": "Configures Elasticsearch 8.x as a Jaeger v2 storage backend, covering shard/replica sizing, the query time-range options `max_span_age` (effective only with `rotation.periodic`, silently overridden to 50 years by alias-based rotation) and `max_trace_duration`, and the three index management strategies selected through `indices.<type>.rotation`: time-based indices (`rotation.periodic`), manual rollover (`rotation.manual_rollover`), and ILM-driven rollover (`rotation.auto_rollover`). Documents index rollover initialization with the `jaeger-es-rollover` container image read from the `jaeger-cluster-plugin-manifest` ConfigMap, a sample `jaeger-ilm-policy` curl PUT request defining hot rollover (`max_age`) and delete phases, and the `ES_USE_ILM=true` env var. Warns that the legacy rotation flags (`use_aliases`, `use_ilm`, and the read/write alias flags) are rejected since Jaeger v2.20.0 and must be migrated to the `rotation` configuration.",
       "generation_method": "ai_agent_reading",
       "updated_at": "2026-08-12T00:00:00Z"
     },

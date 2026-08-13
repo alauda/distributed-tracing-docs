@@ -26,7 +26,7 @@ Shards and replicas are configuration values to take special attention to, becau
 
 ### Query Time Range \{#query-time-range}
 
-`max_span_age` and `max_trace_duration` behave the same way as for Elasticsearch, see [Query Time Range](./elasticsearch.mdx#query-time-range).
+`max_span_age` and `max_trace_duration` behave the same way as for Elasticsearch, see [Query Time Range](./elasticsearch.mdx#query-time-range). Because Alauda Distributed Tracing always uses time-based indices (`rotation.periodic`) with OpenSearch, `max_span_age` is effective here, unlike with the alias-based rotation strategies of Elasticsearch. Align it with the retention enforced by `jaeger-es-index-cleaner`.
 
 :::warning
 Because Alauda Distributed Tracing stores OpenSearch data in daily time-based indices, the `max_trace_duration` default of `24h` (raised from a hardcoded ±1h in Jaeger v2.20.0) always adds one extra daily index on each side of the requested time range. If your traces are short-lived, lower `max_trace_duration` to reduce the number of indices scanned per query.

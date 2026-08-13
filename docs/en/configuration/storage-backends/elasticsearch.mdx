@@ -28,10 +28,14 @@ Two options control the time window that the query service scans when reading sp
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `max_span_age` | `72h` | Maximum lookback for span reads. With alias-based rotation (`manual_rollover` or `auto_rollover`), set it to match the retention of the ILM policy, otherwise the Jaeger UI cannot find traces that are still stored. |
+| `max_span_age` | `72h` | Lookback applied when a read carries no explicit time range, namely trace-ID lookups and the service and operation lists. **Effective only with `rotation.periodic`**, see the warning below. |
 | `max_trace_duration` | `24h` | Maximum expected duration of a single trace, that is, the time between its earliest and latest span. The reader widens the time-range filter by this value on both sides, so that all spans of a trace are found even when the trace extends beyond the requested search window. |
 
-For example, to align the lookback with an ILM policy that deletes indices after 7 days and to restrict the padding to traces no longer than one hour:
+:::warning
+`max_span_age` is silently ignored with alias-based rotation (`rotation.manual_rollover` and `rotation.auto_rollover`). A read alias already resolves to every index attached to it, so Jaeger replaces the configured value with 50 years to keep the time-range filter from excluding old traces. Configure `max_span_age` only for index types that use `rotation.periodic`, and align it with the retention of `jaeger-es-index-cleaner`. With alias-based rotation, retention is governed entirely by the ILM policy or the rollover cron jobs.
+:::
+
+For example, with time-based indices retained for 7 days and traces no longer than one hour:
 
 ```yaml
 max_span_age: 168h
