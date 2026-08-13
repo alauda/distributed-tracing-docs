@@ -217,38 +217,44 @@ spec:
 ```
 
 <Callouts>
-  1. The legacy-Jaeger exporter — inherited from the v1 backup — is named `otlp` and targets the legacy Jaeger collector's headless Service in `cpaas-system`. `balancer_name: round_robin` distributes spans across the headless Service endpoints.
+  1. The legacy-Jaeger exporter — inherited from the v1 backup — is named `otlp` and targets the legacy Jaeger collector's headless Service in `cpaas-system`. `balancer_name: round_robin` distributes spans across the headless Service endpoints. `otlp` is a deprecated alias of the `otlp_grpc` exporter type, which the switch step below adopts.
   2. The trace pipeline sends spans to `debug` (logs) and `otlp` (legacy Jaeger).
 </Callouts>
 
-Patch the Collector to (1) add a new `otlp/jaeger-v2` exporter pointing at the new Jaeger v2 collector Service in `jaeger-system`, (2) remove the legacy `otlp` exporter by setting it to `null`, and (3) replace the trace pipeline's exporter list with `[debug, otlp/jaeger-v2]`:
+Patch the Collector to (1) add a new `otlp_grpc/jaeger-v2` exporter pointing at the new Jaeger v2 collector Service in `jaeger-system`, (2) remove the legacy `otlp` exporter by setting it to `null`, and (3) replace the trace pipeline's exporter list with `[debug, otlp_grpc/jaeger-v2]`:
 
 ```bash {name=migrate-acp-tracing:switch-collector-exporter}
 kubectl -n cpaas-system patch opentelemetrycollector otel --type=merge -p '
 spec:
   config:
     exporters:
-      otlp/jaeger-v2:
+      otlp_grpc/jaeger-v2:
         endpoint: jaeger-collector.jaeger-system.svc.cluster.local:4317
         tls:
           insecure: true
-      otlp: null
+      otlp: null # the inherited exporter is named otlp, so it is removed under that name
     service:
       pipelines:
         traces:
-          exporters: [debug, otlp/jaeger-v2]
+          exporters: [debug, otlp_grpc/jaeger-v2]
 '
 kubectl rollout status deployment/otel-collector -n cpaas-system --timeout=180s
 ```
 
+:::note The OTLP gRPC exporter is named `otlp_grpc`
+The exporter type name is `otlp_grpc`, not `otlp`. The former name still works as a deprecated alias, but the Collector logs a deprecation warning at startup for each affected component instance, and upstream intends to remove the alias in a future release. This migration is a convenient point to adopt the current name, since the inherited exporter is replaced anyway.
+
+The rename applies to newly created exporters. Keep `otlp: null` as it is: it removes the exporter that already exists on the Collector under that name.
+:::
+
 :::warning
-`service.pipelines.traces.exporters` is an array, and a merge patch replaces arrays in their entirety rather than appending. The patch above lists every exporter that must remain in the trace pipeline (`debug`, `otlp/jaeger-v2`). If your trace pipeline contains additional custom exporters, add them to this list before applying the patch.
+`service.pipelines.traces.exporters` is an array, and a merge patch replaces arrays in their entirety rather than appending. The patch above lists every exporter that must remain in the trace pipeline (`debug`, `otlp_grpc/jaeger-v2`). If your trace pipeline contains additional custom exporters, add them to this list before applying the patch.
 
 If the inherited legacy-Jaeger exporter on your Collector is not named `otlp` (for example, your v1 backup used `jaeger` or a different OTLP variant), substitute that name in the `null` removal step accordingly.
 :::
 
 :::tip
-The new exporter is named `otlp/jaeger-v2` rather than reusing the `otlp` name so that, if you later choose to also write to the legacy Jaeger during the observation period, the additional exporter can be patched back in symmetrically as `otlp/jaeger-v1`. See [(Optional) Enabling dual export to the legacy Jaeger](#optional-enabling-dual-export-to-the-legacy-jaeger).
+The new exporter is named `otlp_grpc/jaeger-v2` rather than plain `otlp_grpc` so that, if you later choose to also write to the legacy Jaeger during the observation period, the additional exporter can be patched back in symmetrically as `otlp_grpc/jaeger-v1`. See [(Optional) Enabling dual export to the legacy Jaeger](#optional-enabling-dual-export-to-the-legacy-jaeger).
 :::
 
 Trace ingestion is restored at this point. New traces are written to the new Jaeger v2 backend and become searchable in the new Jaeger UI.
@@ -396,27 +402,27 @@ kubectl delete crd jaegers.jaegertracing.io
 Configuring the v2 OpenTelemetry Collector to write every span to **both** the new Jaeger and the legacy Jaeger is an opt-in alternative to the default single-export pipeline. Consider it when one of the following applies:
 
 - **Parallel validation.** You want to compare the new Jaeger against the legacy Jaeger on production traffic during the observation period before fully relying on the new backend.
-- **Faster in-place rollback.** If the new Jaeger turns out to have problems during the observation period, you can drop `otlp/jaeger-v2` from the trace pipeline with a single patch and the legacy Jaeger keeps receiving traces uninterrupted.
+- **Faster in-place rollback.** If the new Jaeger turns out to have problems during the observation period, you can drop `otlp_grpc/jaeger-v2` from the trace pipeline with a single patch and the legacy Jaeger keeps receiving traces uninterrupted.
 - **Gradual UI switchover.** Different teams plan to switch from the legacy UI to the new UI on independent schedules and you want both UIs to show post-cutover data during the transition.
 
 Trade-offs:
 
 - Elasticsearch write load and storage usage roughly **double** during the observation period because every span is indexed in both index families.
 - The trace pipeline must be reverted by an extra patch in [Stop the dual export](#stop-the-dual-export) before the legacy Jaeger is uninstalled.
-- Two export pipelines must be monitored for failures (`otelcol_exporter_send_failed_spans_total` for both `otlp/jaeger-v2` and `otlp/jaeger-v1`).
+- Two export pipelines must be monitored for failures (`otelcol_exporter_send_failed_spans_total` for both `otlp_grpc/jaeger-v2` and `otlp_grpc/jaeger-v1`).
 
 Dual export does **not** backfill pre-cutover traces into the new Jaeger; pre-cutover traces are only ever queryable through the legacy Jaeger UI.
 
 ### Enable dual export \{#enable-dual-export}
 
-After [Switch the v2 OpenTelemetry Collector to the new Jaeger](#switch-the-v2-opentelemetry-collector-to-the-new-jaeger) has converged, the `otel` Collector has `otlp/jaeger-v2` as the only trace exporter writing to a Jaeger backend (the trace pipeline is `[debug, otlp/jaeger-v2]`). Patch the Collector to add the legacy Jaeger back as a second exporter `otlp/jaeger-v1`, mirroring the legacy-Jaeger endpoint, headless-Service load balancing, and TLS settings of the original `otlp` exporter that was removed in the switch step:
+After [Switch the v2 OpenTelemetry Collector to the new Jaeger](#switch-the-v2-opentelemetry-collector-to-the-new-jaeger) has converged, the `otel` Collector has `otlp_grpc/jaeger-v2` as the only trace exporter writing to a Jaeger backend (the trace pipeline is `[debug, otlp_grpc/jaeger-v2]`). Patch the Collector to add the legacy Jaeger back as a second exporter `otlp_grpc/jaeger-v1`, mirroring the legacy-Jaeger endpoint, headless-Service load balancing, and TLS settings of the original `otlp` exporter that was removed in the switch step:
 
 ```bash {name=migrate-acp-tracing:enable-dual-export}
 kubectl -n cpaas-system patch opentelemetrycollector otel --type=merge -p '
 spec:
   config:
     exporters:
-      otlp/jaeger-v1:
+      otlp_grpc/jaeger-v1:
         endpoint: dns:///jaeger-prod-collector-headless.cpaas-system:4317
         balancer_name: round_robin
         tls:
@@ -424,13 +430,13 @@ spec:
     service:
       pipelines:
         traces:
-          exporters: [debug, otlp/jaeger-v2, otlp/jaeger-v1]
+          exporters: [debug, otlp_grpc/jaeger-v2, otlp_grpc/jaeger-v1]
 '
 kubectl rollout status deployment/otel-collector -n cpaas-system --timeout=180s
 ```
 
 :::warning
-`service.pipelines.traces.exporters` is an array, and a merge patch replaces arrays in their entirety rather than appending. The patch above lists every exporter that must remain in the trace pipeline (`debug`, `otlp/jaeger-v2`, `otlp/jaeger-v1`). If your trace pipeline contains additional custom exporters, add them to this list before applying the patch.
+`service.pipelines.traces.exporters` is an array, and a merge patch replaces arrays in their entirety rather than appending. The patch above lists every exporter that must remain in the trace pipeline (`debug`, `otlp_grpc/jaeger-v2`, `otlp_grpc/jaeger-v1`). If your trace pipeline contains additional custom exporters, add them to this list before applying the patch.
 :::
 
 After the patch is applied, every span is written to both Jaeger backends.
@@ -444,11 +450,11 @@ kubectl -n cpaas-system patch opentelemetrycollector otel --type=merge -p '
 spec:
   config:
     exporters:
-      otlp/jaeger-v1: null
+      otlp_grpc/jaeger-v1: null
     service:
       pipelines:
         traces:
-          exporters: [debug, otlp/jaeger-v2]
+          exporters: [debug, otlp_grpc/jaeger-v2]
 '
 kubectl rollout status deployment/otel-collector -n cpaas-system --timeout=180s
 ```
@@ -463,9 +469,9 @@ For rollback of the OpenTelemetry v1 → v2 stage, see <ExternalSiteLink name="o
 | :--- | :--- |
 | Before [Deploy the new Jaeger v2 instance](#deploy-the-new-jaeger-v2-instance) | No action required for the Jaeger stage — the legacy Jaeger is still receiving traces and the new Jaeger is not deployed. |
 | After [Deploy the new Jaeger v2 instance](#deploy-the-new-jaeger-v2-instance) but before [Switch the v2 OpenTelemetry Collector to the new Jaeger](#switch-the-v2-opentelemetry-collector-to-the-new-jaeger) | Delete the new Jaeger instance (`kubectl -n jaeger-system delete opentelemetrycollector jaeger`). The legacy Jaeger remains intact and continues to receive traces. |
-| New Jaeger has problems during the observation period (default single export) | Patch the v2 Collector to point its trace pipeline back at the legacy Jaeger collector (replace `otlp/jaeger-v2` with an exporter targeting `jaeger-prod-collector-headless.cpaas-system:4317`). The legacy Jaeger receives traces again immediately. The fastest pre-built path is to switch to dual export first via [Enable dual export](#enable-dual-export); if that path was already in use, simply patch out `otlp/jaeger-v2`. |
-| New Jaeger has problems during the observation period (dual export enabled) | Patch the v2 Collector to drop `otlp/jaeger-v2` from the trace pipeline. The legacy Jaeger continues to receive traces while you investigate. |
-| Legacy Jaeger has problems during the observation period (dual export enabled) | Patch the v2 Collector to drop `otlp/jaeger-v1` from the trace pipeline. This is equivalent to ending dual export early; pre-cutover traces older than the legacy retention will not be reachable in the new Jaeger. |
+| New Jaeger has problems during the observation period (default single export) | Patch the v2 Collector to point its trace pipeline back at the legacy Jaeger collector (replace `otlp_grpc/jaeger-v2` with an exporter targeting `jaeger-prod-collector-headless.cpaas-system:4317`). The legacy Jaeger receives traces again immediately. The fastest pre-built path is to switch to dual export first via [Enable dual export](#enable-dual-export); if that path was already in use, simply patch out `otlp_grpc/jaeger-v2`. |
+| New Jaeger has problems during the observation period (dual export enabled) | Patch the v2 Collector to drop `otlp_grpc/jaeger-v2` from the trace pipeline. The legacy Jaeger continues to receive traces while you investigate. |
+| Legacy Jaeger has problems during the observation period (dual export enabled) | Patch the v2 Collector to drop `otlp_grpc/jaeger-v1` from the trace pipeline. This is equivalent to ending dual export early; pre-cutover traces older than the legacy retention will not be reachable in the new Jaeger. |
 | After the observation period — full rollback to the legacy stack | First, point the v2 Collector trace pipeline back at the legacy Jaeger. Then follow <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html#rollback" children="Rollback" /> in the OpenTelemetry v2 migration guide and roll out the application Pods again so that the legacy Java agent is re-injected. The new Jaeger v2 instance and the OpenTelemetry v2 Operator must be uninstalled before the legacy Operator is reinstalled. |
 
 ## FAQ \{#faq}

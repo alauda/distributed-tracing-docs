@@ -633,7 +633,7 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
     </Callouts>
 
     :::note The OTLP gRPC exporter is named `otlp_grpc`
-    The exporter type name is `otlp_grpc`, not `otlp`. The former name still works as a deprecated alias, but the Collector then logs the following at startup for each affected component instance, and upstream intends to remove the alias in a future release.
+    The exporter type name is `otlp_grpc`, not `otlp`. The former name still works as a deprecated alias, but the Collector then logs a deprecation warning at startup for each affected component instance, and upstream intends to remove the alias in a future release.
     :::
 
 2. Render the manifest with `envsubst` and apply the configuration:
