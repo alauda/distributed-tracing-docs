@@ -32,14 +32,9 @@ $ yarn install
 ./hack/update-jaeger-version.sh v2.16.0 v2.17.0
 ```
 
-### 更新 Jaeger 镜像 tag
+### 更新 migrating-from-acp-tracing.mdx 文档
 
-更新文档中 `build-harbor.alauda.cn` 镜像的 tag：
-
-```bash
-# 用法: ./hack/update-jaeger-image-tag.sh <新tag>
-./hack/update-jaeger-image-tag.sh 2.17.0-r0
-```
+更新 [migrating-from-acp-tracing.mdx](./docs/en/migrating/migrating-from-acp-tracing.mdx) 中的 `kubectl get opentelemetrycollector -A` 命令执行示例结果为最新，包括：`VERSION` 和 `IMAGE`。
 
 ### Jaeger 新版本内容同步更新
 
