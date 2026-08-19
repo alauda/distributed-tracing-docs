@@ -141,6 +141,8 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     export JAEGER_ES_INDEX_PREFIX="acp-${CLUSTER_NAME}"
     # Maximum age of spans the Jaeger query service will search. Keep aligned with the index-cleaner retention.
     export JAEGER_MAX_SPAN_AGE="168h"
+    # Maximum expected duration of a single trace. Controls how far beyond the search window spans are looked up.
+    export JAEGER_MAX_TRACE_DURATION="1h"
     # Base path for the Jaeger UI
     export JAEGER_BASEPATH="/clusters/${CLUSTER_NAME}/jaeger"
     ```
@@ -270,28 +272,37 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
                     insecure_skip_verify: true
                   service_cache_ttl: 12h # [!code callout]
                   max_span_age: "${JAEGER_MAX_SPAN_AGE}" # [!code callout]
+                  max_trace_duration: "${JAEGER_MAX_TRACE_DURATION}" # [!code callout]
                   indices:
                     index_prefix: "${JAEGER_ES_INDEX_PREFIX}" # [!code callout]
                     spans:
-                      date_layout: "2006-01-02"
-                      rollover_frequency: "day" # [!code callout]
                       shards: 5
                       replicas: 1
+                      rotation: # [!code callout]
+                        periodic:
+                          date_layout: "2006-01-02"
+                          rollover_frequency: "day"
                     services:
-                      date_layout: "2006-01-02"
-                      rollover_frequency: "day"
                       shards: 5
                       replicas: 1
+                      rotation:
+                        periodic:
+                          date_layout: "2006-01-02"
+                          rollover_frequency: "day"
                     dependencies:
-                      date_layout: "2006-01-02"
-                      rollover_frequency: "day"
                       shards: 5
                       replicas: 1
+                      rotation:
+                        periodic:
+                          date_layout: "2006-01-02"
+                          rollover_frequency: "day"
                     sampling:
-                      date_layout: "2006-01-02"
-                      rollover_frequency: "day"
                       shards: 5
                       replicas: 1
+                      rotation:
+                        periodic:
+                          date_layout: "2006-01-02"
+                          rollover_frequency: "day"
 
           jaeger_query: # [!code callout]
             storage:
@@ -310,10 +321,6 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
               processors: [memory_limiter, batch]
               exporters: [debug, jaeger_storage_exporter]
           telemetry:
-            resource:
-              attributes:
-                - name: service.name
-                  value: jaeger
             metrics:
               level: detailed
               readers:
@@ -322,9 +329,6 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
                       prometheus:
                         host: "0.0.0.0"
                         port: 8888
-                        without_scope_info: true
-                        without_type_suffix: true
-                        without_units: true
             logs:
               level: info
 
@@ -375,11 +379,12 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
       6. The `opensearch` driver selects the OpenSearch storage implementation. Jaeger uses the same implementation for OpenSearch as for Elasticsearch.
       7. `service_cache_ttl` controls how long the service name cache is kept. The default is `12h`. If the index retention is short, reduce this value to ensure the Jaeger UI can discover services promptly.
       8. `max_span_age` is the maximum age of spans the query service will search, set here from `JAEGER_MAX_SPAN_AGE`. Keep it aligned with the `jaeger-es-index-cleaner` retention so the UI does not query indices that have already been deleted.
-      9. `index_prefix` must match the `INDEX_PREFIX` used by the `jaeger-es-index-cleaner` CronJob, otherwise the cleaner cannot find the indices to delete. For more details on shards and replicas tuning, see [Shards and Replicas](../configuration/storage-backends/opensearch.mdx#shards-and-replicas).
-      10. `rollover_frequency: day` together with `date_layout` produces daily indices such as `${JAEGER_ES_INDEX_PREFIX}-jaeger-span-YYYY-MM-DD`. These plain daily indices (no rollover alias) are what the `jaeger-es-index-cleaner` matches by date suffix.
-      11. The `jaeger_query` extension serves the Jaeger Query API and the Jaeger UI.
-      12. The `additionalContainers` section defines the OAuth2 Proxy sidecar, which handles authentication for the Jaeger UI by integrating with the Alauda Container Platform Dex identity provider.
-      13. Resource requests and limits for the OAuth2 Proxy sidecar. This container has low resource requirements since it only proxies authentication requests.
+      9. `max_trace_duration` is the maximum expected duration of a single trace, set here from `JAEGER_MAX_TRACE_DURATION`. The query service widens the time-range filter by this value on both sides so that spans extending beyond the search window are still found. The default is `24h`, which always adds one extra daily index on each side of every query; lower it if your traces are short-lived. See [Query Time Range](../configuration/storage-backends/opensearch.mdx#query-time-range).
+      10. `index_prefix` must match the `INDEX_PREFIX` used by the `jaeger-es-index-cleaner` CronJob, otherwise the cleaner cannot find the indices to delete. For more details on shards and replicas tuning, see [Shards and Replicas](../configuration/storage-backends/opensearch.mdx#shards-and-replicas).
+      11. The `rotation.periodic` strategy with `date_layout: "2006-01-02"` and `rollover_frequency: day` produces daily indices such as `${JAEGER_ES_INDEX_PREFIX}-jaeger-span-YYYY-MM-DD`. These plain daily indices (no rollover alias) are what the `jaeger-es-index-cleaner` matches by date suffix. The equivalent `date_layout` and `rollover_frequency` fields directly under `indices.<type>` are deprecated since Jaeger v2.20.0; do not set both forms for the same index type, because that combination is rejected at startup.
+      12. The `jaeger_query` extension serves the Jaeger Query API and the Jaeger UI.
+      13. The `additionalContainers` section defines the OAuth2 Proxy sidecar, which handles authentication for the Jaeger UI by integrating with the Alauda Container Platform Dex identity provider.
+      14. Resource requests and limits for the OAuth2 Proxy sidecar. This container has low resource requirements since it only proxies authentication requests.
     </Callouts>
 
 7. Render the manifest with `envsubst` and apply the configuration:
@@ -579,7 +584,7 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
             spike_limit_percentage: 20
         exporters:
           debug: {}
-          otlp/traces: # [!code callout]
+          otlp_grpc/traces: # [!code callout]
             endpoint: "${JAEGER_INSTANCE_NAME}-collector.${JAEGER_NS}.svc.cluster.local:4317"
             tls:
               insecure: true
@@ -593,7 +598,7 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
             traces:
               receivers: [otlp, zipkin]
               processors: [memory_limiter, batch]
-              exporters: [debug, otlp/traces] # [!code callout]
+              exporters: [debug, otlp_grpc/traces] # [!code callout]
             metrics:
               receivers: [otlp]
               processors: [memory_limiter, batch]
@@ -606,9 +611,6 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
                     prometheus:
                       host: 0.0.0.0
                       port: 8888
-                      without_scope_info: true
-                      without_type_suffix: true
-                      without_units: true
     ```
 
     <Callouts>
@@ -616,9 +618,13 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
       2. Resource requests and limits for the Collector container. Adjust based on your expected trace throughput.
       3. Enables the Operator to automatically create `ServiceMonitor` resources for the Collector's metrics endpoint.
       4. The OTLP receiver accepts trace data over gRPC (port `4317`) and HTTP (port `4318`) from instrumented applications.
-      5. The `otlp/traces` exporter forwards received traces to the Jaeger collector service. The endpoint is derived from the Jaeger instance name and namespace.
-      6. The trace pipeline receives data via OTLP and Zipkin, processes it through `memory_limiter` and `batch`, and exports to both the `debug` exporter (for logging) and `otlp/traces` (for forwarding to Jaeger).
+      5. The `otlp_grpc/traces` exporter forwards received traces to the Jaeger collector service. The endpoint is derived from the Jaeger instance name and namespace.
+      6. The trace pipeline receives data via OTLP and Zipkin, processes it through `memory_limiter` and `batch`, and exports to both the `debug` exporter (for logging) and `otlp_grpc/traces` (for forwarding to Jaeger).
     </Callouts>
+
+    :::note The OTLP gRPC exporter is named `otlp_grpc`
+    The exporter type name is `otlp_grpc`, not `otlp`. The former name still works as a deprecated alias, but the Collector then logs a deprecation warning at startup for each affected component instance, and upstream intends to remove the alias in a future release.
+    :::
 
 2. Render the manifest with `envsubst` and apply the configuration:
 
@@ -685,7 +691,7 @@ After installing all components, verify the end-to-end tracing pipeline by gener
 
 Service Performance Monitoring (SPM) surfaces in the Jaeger UI as the **Monitor** tab, aggregating span data to produce RED (Request, Error, Duration) metrics. This enables you to identify performance issues without requiring prior knowledge of service or operation names. For more details, see [Service Performance Monitoring (SPM)](../configuration/spm.mdx).
 
-Enabling SPM requires running the SpanMetrics Connector **inside Jaeger** to generate the RED metrics, and routing spans from the front OpenTelemetry Collector to Jaeger through a `loadbalancing` exporter so the metrics stay accurate even when both components run with multiple replicas. Jaeger exposes the metrics on a Prometheus endpoint and serves them back to the Monitor tab through a PromQL-compatible backend.
+Enabling SPM requires running the SpanMetrics Connector **inside Jaeger** to generate the RED metrics, and routing spans from the front OpenTelemetry Collector to Jaeger through a `load_balancing` exporter so the metrics stay accurate even when both components run with multiple replicas. Jaeger exposes the metrics on a Prometheus endpoint and serves them back to the Monitor tab through a PromQL-compatible backend.
 
 **Prerequisites**
 
@@ -714,17 +720,18 @@ Enabling SPM requires running the SpanMetrics Connector **inside Jaeger** to gen
       --dry-run=client -o yaml | kubectl apply -f -
     ```
 
-3. Patch the OpenTelemetry Collector to forward spans to Jaeger through a `loadbalancing` exporter instead of the direct `otlp/traces` exporter. With `routing_key: service`, all spans of a given service are consistently sent to the same Jaeger replica, so the SpanMetrics Connector running inside Jaeger (next step) aggregates each service exactly once. This is what keeps the metrics correct when the Collector or Jaeger runs with more than one replica:
+3. Patch the OpenTelemetry Collector to forward spans to Jaeger through a `load_balancing` exporter, replacing the direct `otlp_grpc/traces` exporter. With `routing_key: service`, all spans of a given service are consistently sent to the same Jaeger replica, so the SpanMetrics Connector running inside Jaeger (next step) aggregates each service exactly once. This is what keeps the metrics correct when the Collector or Jaeger runs with more than one replica:
 
     ```bash {name=install-tracing-opensearch-spm:patch-otel-collector}
     kubectl patch opentelemetrycollector otel -n ${JAEGER_NS} --type=merge -p "
     spec:
       config:
         exporters:
-          loadbalancing:
+          otlp_grpc/traces: null # remove the direct exporter, replaced by load_balancing
+          load_balancing:
             routing_key: service
             protocol:
-              otlp:
+              otlp: # a configuration field of the load_balancing exporter, not a component type name
                 tls:
                   insecure: true
             resolver:
@@ -734,7 +741,7 @@ Enabling SPM requires running the SpanMetrics Connector **inside Jaeger** to gen
         service:
           pipelines:
             traces:
-              exporters: [debug, loadbalancing]
+              exporters: [debug, load_balancing]
     "
     ```
 

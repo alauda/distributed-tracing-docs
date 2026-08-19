@@ -8,7 +8,7 @@
 
 `perf/span-metrics` 分支将 SPM（Service Performance Monitoring）改造为**两层 gateway 拓扑**：
 
-- **前置 OTel Collector（`otel`）**：无状态，`traces` 管道用 `loadbalancing` exporter 按 `routing_key: service` 把 span 路由到 Jaeger。
+- **前置 OTel Collector（`otel`）**：无状态，`traces` 管道用 `load_balancing` exporter 按 `routing_key: service` 把 span 路由到 Jaeger。
 - **Jaeger（`${JAEGER_INSTANCE_NAME}`）**：运行 `spanmetrics` connector 生成 RED 指标，并通过 `prometheus` exporter（`:8889`）暴露。
 
 本手册用于在**已按安装文档部署并启用 SPM** 的环境上，手动把 OTel Collector 和 Jaeger 扩容到多副本，并验证扩容后 **span-metrics 指标依然正确**——即满足「单写入者原则」：每个 service 的 RED 指标只由**唯一一个** Jaeger 副本聚合，不碎片化、不重复计数。
@@ -32,12 +32,12 @@
 
 ## 4. 步骤一：确认当前为新方案 SPM 拓扑
 
-扩容前先确认前置 Collector 已用 `loadbalancing` 按 `service` 路由、Jaeger 已运行 `spanmetrics`：
+扩容前先确认前置 Collector 已用 `load_balancing` 按 `service` 路由、Jaeger 已运行 `spanmetrics`：
 
 ```bash
 # 前置 otel 的 routing_key 应为 service
 kubectl -n ${JAEGER_NS} get opentelemetrycollector otel \
-  -o jsonpath='{.spec.config.exporters.loadbalancing.routing_key}{"\n"}'
+  -o jsonpath='{.spec.config.exporters.load_balancing.routing_key}{"\n"}'
 
 # Jaeger 的 connectors 应包含 spanmetrics
 kubectl -n ${JAEGER_NS} get opentelemetrycollector ${JAEGER_INSTANCE_NAME} \

@@ -14,7 +14,7 @@
 | :---------------------------------- | :----------------------------------------------------------------------------------------- |
 | 两个连接器 + 全部多副本，能支持吗？ | ✅ **能**，但不能共用一套负载均衡                                                          |
 | 为什么                              | spanmetrics 要 `routing_key: service`，servicegraph 要 `routing_key: traceID`，二者互斥    |
-| 怎么配                              | 前置无状态层**分叉成两套 loadbalancing exporter**，各按各的 key 路由到各自的有状态连接器层 |
+| 怎么配                              | 前置无状态层**分叉成两套 load_balancing exporter**，各按各的 key 路由到各自的有状态连接器层 |
 | 一个隐藏前提                        | 「Service Graph」在 Jaeger 语境里有歧义，先看第 2 节                                       |
 
 ---
@@ -42,7 +42,7 @@
 
 | 连接器           | 需要的 routing_key | 原因（一手来源原文）                                                                                                                                                                              |
 | :--------------- | :----------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **spanmetrics**  | **`service`**      | loadbalancing README：按 `traceID` 路由会让「每个 collector 都看到 `service+operation` 标签」→ Prometheus **标签冲突**；按 service 路由则「每个 collector 只看到一个 service name，可无冲突推送」 |
+| **spanmetrics**  | **`service`**      | loadbalancingexporter README：按 `traceID` 路由会让「每个 collector 都看到 `service+operation` 标签」→ Prometheus **标签冲突**；按 service 路由则「每个 collector 只看到一个 service name，可无冲突推送」 |
 | **servicegraph** | **`traceID`**      | servicegraph README：「该连接器必须处理一条边的**两端**……如果一条 trace 的 span 分散在多个实例上，就无法可靠配对。解决办法是在运行此连接器的实例前面加一层 load balancing exporter」              |
 
 冲突的本质：servicegraph 要把 **client span（service A）和 server span（service B）** 配对，它们**同一个 traceID 但不同 service** → 必须按 traceID 路由才能落到同一实例；而 spanmetrics 按 service 聚合 → 必须按 service 路由。**同一份 span 流不可能同时按两种 key 路由。**
@@ -63,7 +63,7 @@
                               ▼
         ┌─────────────────────────────────────────────┐
         │  Tier 1：前置 OTel Collector（无状态，副本 N）   │
-        │  traces 管道分叉到两个 loadbalancing exporter   │
+        │  traces 管道分叉到两个 load_balancing exporter   │
         └───────────────┬───────────────────┬───────────┘
             routing_key=service        routing_key=traceID
                         │                       │
@@ -79,20 +79,20 @@
             PromQL 存储 ──► Jaeger Monitor    PromQL 存储 ──► Grafana 服务拓扑
 ```
 
-> 关于 routing_key 的澄清：loadbalancing README 说 `traceID` "invalid for metrics"，指的是当你负载均衡一条 **metrics 信号**管道时不能用 traceID。这里我们路由的是 **traces（span）信号**，按 traceID 路由 span 完全合法 —— 这正是 servicegraph/tail-sampling 的标准做法。
+> 关于 routing_key 的澄清：loadbalancingexporter README 说 `traceID` "invalid for metrics"，指的是当你负载均衡一条 **metrics 信号**管道时不能用 traceID。这里我们路由的是 **traces（span）信号**，按 traceID 路由 span 完全合法 —— 这正是 servicegraph/tail-sampling 的标准做法。
 
 ### 4.2 Tier 1（前置层）—— 分叉两套 LB
 
 ```yaml
 exporters:
-  loadbalancing/spanmetrics: # → 喂 Jaeger（spanmetrics）
+  load_balancing/spanmetrics: # → 喂 Jaeger（spanmetrics）
     routing_key: service
     protocol: { otlp: { tls: { insecure: true } } }
     resolver:
       k8s:
         service: ${JAEGER_INSTANCE_NAME}-collector.${JAEGER_NS}
         ports: [4317]
-  loadbalancing/servicegraph: # → 喂独立的 servicegraph 层
+  load_balancing/servicegraph: # → 喂独立的 servicegraph 层
     routing_key: traceID
     protocol: { otlp: { tls: { insecure: true } } }
     resolver:
@@ -104,7 +104,7 @@ service:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [loadbalancing/spanmetrics, loadbalancing/servicegraph] # 每个 span 同时分发到两边
+      exporters: [load_balancing/spanmetrics, load_balancing/servicegraph] # 每个 span 同时分发到两边
 ```
 
 ### 4.3 Tier 2a（Jaeger 层，多副本）—— 收 service 路由的 span，做存储 + spanmetrics
@@ -170,7 +170,7 @@ service:
 ## 8. 来源
 
 - [servicegraph connector README](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/connector/servicegraphconnector/README.md) —— 需处理边的两端、需 LB 前置；指标名 `traces_service_graph_*`
-- [loadbalancing exporter README](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/loadbalancingexporter/README.md) —— routing_key 取值、service vs traceID
+- [load_balancing exporter README](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/loadbalancingexporter/README.md) —— routing_key 取值、service vs traceID
 - [Grafana Alloy loadbalancing 文档](https://grafana.com/docs/alloy/latest/reference/components/otelcol/otelcol.exporter.loadbalancing/) —— 「两套负载均衡」、servicegraph 用 traceID
 - [Jaeger v2 架构](https://www.jaegertracing.io/docs/2.18/architecture/) —— 内嵌连接器仅 Span Metrics + Forward
 - [spark-dependencies](https://github.com/jaegertracing/spark-dependencies) 与 [Jaeger FAQ](https://www.jaegertracing.io/docs/next-release-v2/faq/) —— 依赖图由批作业从存储计算

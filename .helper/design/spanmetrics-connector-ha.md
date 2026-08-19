@@ -63,7 +63,7 @@
                            ▼
    ┌───────────────────────────────────────────────┐
    │  Tier 1：前置 OTel Collector `otel`（无状态，多副本）│
-   │  traces 管道用 loadbalancing exporter            │
+   │  traces 管道用 load_balancing exporter            │
    │  routing_key: service                           │
    └───────────────────────┬─────────────────────────┘
                  按 service 一致性哈希
@@ -88,7 +88,7 @@
 
 > 注意：`traceID` "invalid for metrics" 指的是负载均衡一条 **metrics 信号**管道；这里 Tier 1 路由的是 **traces（span）信号**，按 service 路由 span 完全合法。
 
-**② 真正的修复是「每条 series 单写入者」，而不是「放进 Jaeger」这个动作本身。** 把 spanmetrics 放在 Jaeger 还是放在专用 collector 是正交选择；让方案正确的是前置层的 `loadbalancing(routing_key=service)`。在本前提（Jaeger 也多副本）下，二者缺一不可。
+**② 真正的修复是「每条 series 单写入者」，而不是「放进 Jaeger」这个动作本身。** 把 spanmetrics 放在 Jaeger 还是放在专用 collector 是正交选择；让方案正确的是前置层的 `load_balancing(routing_key=service)`。在本前提（Jaeger 也多副本）下，二者缺一不可。
 
 ---
 
@@ -96,7 +96,7 @@
 
 > 以下用 `patch`/片段方式表达，命名沿用安装文档：前置 collector 名为 `otel`，Jaeger 实例名为 `${JAEGER_INSTANCE_NAME}`，命名空间 `${JAEGER_NS}`。
 
-### 5.1 Tier 1 —— 前置 OTel Collector（多副本，用 loadbalancing 取代 otlp/traces）
+### 5.1 Tier 1 —— 前置 OTel Collector（多副本，用 load_balancing 取代 otlp/traces）
 
 ```yaml
 apiVersion: opentelemetry.io/v1beta1
@@ -109,7 +109,7 @@ spec:
   replicas: 2 # 多副本，无状态
   config:
     exporters:
-      loadbalancing:
+      load_balancing:
         routing_key: service # ← 必须是 service
         protocol:
           otlp:
@@ -125,7 +125,7 @@ spec:
         traces:
           receivers: [otlp, zipkin]
           processors: [memory_limiter, batch]
-          exporters: [debug, loadbalancing] # 用 loadbalancing 取代原来的 otlp/traces
+          exporters: [debug, load_balancing] # 用 load_balancing 取代原来的 otlp/traces
 ```
 
 > **RBAC**：`k8s` resolver 需要 collector 的 ServiceAccount 具备对 `endpoints` 的 `get/list/watch` 权限。若用 `dns` resolver，则需为 Jaeger collector 建一个 **headless service**（`clusterIP: None`）。

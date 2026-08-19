@@ -5,7 +5,7 @@
 # 多副本验证与存储后端（ES/OS）无关，故两者共享同一套逻辑，仅入口测试函数名不同。
 #
 # 设计要点：本脚本**不修改、也不依赖任何 mdx runme 代码块**。它在「已按安装文档启用 SPM
-# （新方案：前置 otel 用 loadbalancing(routing_key=service) → Jaeger 内跑 spanmetrics）」的
+# （新方案：前置 otel 用 load_balancing(routing_key=service) → Jaeger 内跑 span_metrics）」的
 # 环境之上，直接通过 kubectl 扩容、部署多 service telemetrygen、并逐个 Jaeger 副本校验
 # 「单写入者」：每个 service 只被一个 Jaeger 副本聚合 spanmetrics，指标不碎片、不重复。
 #
@@ -28,13 +28,16 @@ SPM_HA_TG_DURATION="${SPM_HA_TG_DURATION:-30s}"       # 每个 telemetrygen 发�
 # otel 实例不存在视为「环境未安装」→ 由调用方 skip；存在但配置不符 → 失败。
 _spm_ha_precheck() {
     local rk connectors
+    # 先查新名 load_balancing（collector v0.158.0+ 正式名），查不到再回退旧别名 loadbalancing
     rk=$(kubectl -n "$JAEGER_NS" get opentelemetrycollector otel \
+        -o jsonpath='{.spec.config.exporters.load_balancing.routing_key}' 2>/dev/null)
+    [ -z "$rk" ] && rk=$(kubectl -n "$JAEGER_NS" get opentelemetrycollector otel \
         -o jsonpath='{.spec.config.exporters.loadbalancing.routing_key}' 2>/dev/null)
     connectors=$(kubectl -n "$JAEGER_NS" get opentelemetrycollector "$JAEGER_INSTANCE_NAME" \
         -o jsonpath='{.spec.config.connectors}' 2>/dev/null)
 
     if [ "$rk" != "service" ]; then
-        log_error "前置 otel 未配置 loadbalancing(routing_key=service)，当前值: '${rk}'"
+        log_error "前置 otel 未配置 load_balancing(routing_key=service)，当前值: '${rk}'"
         return 1
     fi
     # glob 同时兼容新名 span_metrics（Jaeger v2.20.0+ 正式名）与旧别名 spanmetrics
@@ -42,7 +45,7 @@ _spm_ha_precheck() {
         *span*metrics*) ;;
         *) log_error "Jaeger 实例 '${JAEGER_INSTANCE_NAME}' 未配置 span_metrics connector"; return 1 ;;
     esac
-    log_success "前置检查通过：otel loadbalancing(routing_key=service) + jaeger span_metrics"
+    log_success "前置检查通过：otel load_balancing(routing_key=service) + jaeger span_metrics"
     return 0
 }
 
