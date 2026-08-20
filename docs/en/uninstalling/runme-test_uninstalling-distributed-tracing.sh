@@ -60,7 +60,7 @@ test_uninstalling_distributed_tracing() {
     # ES 配置加载已下沉到 Elasticsearch 安装测试，卸载子进程不再自动注入 TRACING_ES_ENDPOINT，
     # 故改用命名空间存在性作为门槛，对 Elasticsearch / OpenSearch 两条链通用。
     if ! kubectl get namespace "${JAEGER_NS}" &>/dev/null; then
-        skip_test "命名空间 ${JAEGER_NS} 不存在，未检测到分布式调用链部署，跳过卸载测试"
+        skip_test_env "命名空间 ${JAEGER_NS} 不存在，未检测到分布式调用链部署，跳过卸载测试"
         return 0
     fi
 
