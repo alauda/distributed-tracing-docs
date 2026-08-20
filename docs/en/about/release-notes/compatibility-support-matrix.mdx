@@ -1,0 +1,17 @@
+---
+weight: 9000
+---
+
+# Compatibility and support matrix
+
+The following table shows the compatibility and support matrix between the Alauda Distributed Tracing and Alauda Container Platform versions.
+
+| Alauda Distributed Tracing | Jaeger | Alauda Build of OpenTelemetry v2 | OpenTelemetry Operator | Alauda Container Platform |
+|----------------------------|--------|----------------------------------|------------------------|---------------------------|
+| v2.1                       | 2.20.0 | v2.1                             | 0.157.0                | v4.2, v4.3, v4.4          |
+| v2.0                       | 2.16.0 | v2.0                             | 0.147.0                | v4.2, v4.3, v4.4          |
+
+:::note
+- Alauda Distributed Tracing is deployed through the OpenTelemetry Operator, so the OpenTelemetry Operator version must match the version listed in the table.
+- Starting from Alauda Distributed Tracing v2.1, the Alauda Build of Jaeger v2 cluster plugin must be installed. See [Installing](../../installing/).
+:::
