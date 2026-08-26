@@ -159,7 +159,7 @@ test_installing_distributed_tracing_opensearch() {
         fi
         log_info "步骤 0: 使用手动 OpenSearch 配置: endpoint=${TRACING_OPENSEARCH_ENDPOINT}"
     else
-        skip_test "OpenSearch 存储后端不可用：自动安装未启用（TRACING_INSTALL_OPENSEARCH=true 且 PKG_ACP_STORAGE_OPERATOR_URL / PKG_TOPOLVM_OPERATOR_URL 齐全才生效），且未设置手动 TRACING_OPENSEARCH_ENDPOINT / USER / PASS，跳过 OpenSearch 调用链安装测试"
+        skip_test_env "OpenSearch 存储后端不可用：自动安装未启用（TRACING_INSTALL_OPENSEARCH=true 且 PKG_ACP_STORAGE_OPERATOR_URL / PKG_TOPOLVM_OPERATOR_URL 齐全才生效），且未设置手动 TRACING_OPENSEARCH_ENDPOINT / USER / PASS，跳过 OpenSearch 调用链安装测试"
         return 0
     fi
 

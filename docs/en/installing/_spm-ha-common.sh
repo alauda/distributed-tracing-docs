@@ -180,7 +180,7 @@ _spm_ha_run() {
     log_header "SPM 多副本（HA）验证 [${backend}] —— 目标副本数 ${SPM_HA_REPLICAS}、service 数 ${SPM_HA_SVC_COUNT}"
 
     if ! kubectl -n "$JAEGER_NS" get opentelemetrycollector otel >/dev/null 2>&1; then
-        skip_test "未检测到 ${JAEGER_NS}/otel，环境未安装 SPM，跳过多副本验证"
+        skip_test_env "未检测到 ${JAEGER_NS}/otel，环境未安装 SPM，跳过多副本验证"
         return 0
     fi
     _spm_ha_precheck || return 1
