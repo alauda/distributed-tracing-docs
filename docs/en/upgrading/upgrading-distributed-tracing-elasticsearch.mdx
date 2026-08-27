@@ -1,0 +1,427 @@
+---
+weight: 10
+---
+
+# Upgrading Alauda Distributed Tracing with Elasticsearch
+
+Upgrading an Elasticsearch-backed deployment from v2.0 (Jaeger 2.16.0, Alauda Build of OpenTelemetry v2 Operator 0.147.0) to v2.1 (Jaeger 2.20.0, Operator 0.157.0) involves the following steps:
+
+1. Installing the Alauda Build of Jaeger v2 cluster plugin
+2. Upgrading the Alauda Build of OpenTelemetry v2 Operator
+3. Updating the OpenTelemetry Collector
+4. Updating the Elasticsearch index templates
+5. Updating the Alauda Build of Jaeger v2
+
+:::warning
+Jaeger v2.20.0 rejects the legacy Elasticsearch rotation flags `use_aliases` and `use_ilm`. Update the image and the configuration of the Jaeger instance **in a single patch** (step 5), otherwise the new Pod exits at startup with `invalid configuration: ... deprecated ES rotation flags ... are no longer supported`. Because the new Pod never becomes ready, the previous Pod keeps serving traces, so a stalled rollout does not interrupt tracing.
+:::
+
+This procedure keeps all trace data in place. No index, alias, or ILM policy is recreated, and existing indices remain readable.
+
+**Prerequisites**
+
+- An Alauda Distributed Tracing v2.0 deployment installed as described in [Installing Alauda Distributed Tracing with Elasticsearch](../installing/installing-distributed-tracing-elasticsearch.mdx).
+- The Alauda Build of Jaeger v2 cluster plugin and the Alauda Build of OpenTelemetry v2 Operator 0.157.0 are published to the platform.
+- An active ACP CLI (`kubectl`) session by a cluster administrator with the `cluster-admin` role, for both the target cluster and the `global` cluster.
+- Review the [Upgrade Notes](../about/release-notes/v2-1-0.mdx#upgrade-notes) for the behavior changes introduced by this release.
+
+**Setting environment variables**
+
+Run the following commands against the target cluster. The Elasticsearch endpoint and the index prefix are read back from the running Jaeger instance so that they always match the existing deployment:
+
+```bash {name=upgrade-tracing-elasticsearch:set-vars}
+# Namespace where the tracing components are deployed
+export JAEGER_NS="jaeger-system"
+# Name of the OpenTelemetryCollector resource that runs Jaeger
+export JAEGER_INSTANCE_NAME="jaeger"
+
+export ES_ENDPOINT=$(kubectl -n${JAEGER_NS} get opentelemetrycollector ${JAEGER_INSTANCE_NAME} \
+  -o jsonpath='{.spec.config.extensions.jaeger_storage.backends.es_storage.elasticsearch.server_urls[0]}')
+export JAEGER_ES_INDEX_PREFIX=$(kubectl -n${JAEGER_NS} get opentelemetrycollector ${JAEGER_INSTANCE_NAME} \
+  -o jsonpath='{.spec.config.extensions.jaeger_storage.backends.es_storage.elasticsearch.indices.index_prefix}')
+
+# Maximum expected duration of a single trace. Controls how far beyond the search
+# window spans are looked up. The Jaeger default changed from 1h to 24h in v2.20.0.
+export JAEGER_MAX_TRACE_DURATION="1h"
+```
+
+## Installing the Alauda Build of Jaeger v2 Cluster Plugin \{#installing-the-cluster-plugin}
+
+Starting with v2.1, the container images of the tracing components are delivered by the Alauda Build of Jaeger v2 cluster plugin instead of the Operator bundle. Installing the plugin synchronizes the images to the platform's built-in registry and creates the `jaeger-cluster-plugin-manifest` ConfigMap in the `cpaas-system` namespace of the target cluster. The remaining steps read the image addresses from that ConfigMap.
+
+### Installing via the web console
+
+1. In the platform management view, navigate to **Administrator** > **Marketplace** > **Cluster Plugins**.
+2. Select the cluster where the tracing components are deployed.
+3. Find **Alauda Build of Jaeger v2** and click **Install**. The plugin requires no installation parameters.
+
+### Installing via the CLI
+
+Cluster plugins are installed by creating a `ModuleInfo` resource **in the `global` cluster**, regardless of which cluster the plugin targets.
+
+1. Run the following command in the `global` cluster to check the published plugin versions:
+
+    ```bash {name=upgrade-tracing-elasticsearch:list-jaeger-plugin-versions}
+    kubectl get moduleconfigs -l cpaas.io/module-name=jaeger-cluster-plugin \
+      -o custom-columns=NAME:.metadata.name,VERSION:.spec.version
+    ```
+
+2. Create a `ModuleInfo` resource in the `global` cluster. Replace `<target-cluster>` with the name of the cluster where the tracing components are deployed, and `<plugin-version>` with a version from the previous step:
+
+    ```bash {name=upgrade-tracing-elasticsearch:create-jaeger-plugin-moduleinfo}
+    kubectl apply -f - <<EOF
+    apiVersion: cluster.alauda.io/v1alpha1
+    kind: ModuleInfo
+    metadata:
+      labels:
+        cpaas.io/cluster-name: <target-cluster>
+        cpaas.io/module-name: jaeger-cluster-plugin
+        cpaas.io/module-type: plugin
+      name: <target-cluster>-jaeger-cluster-plugin
+    spec:
+      config: {}
+      version: <plugin-version>
+    EOF
+    ```
+
+3. Verify the installation in the `global` cluster. The plugin is installed successfully when the `STATUS` column shows `Running`:
+
+    ```bash {name=upgrade-tracing-elasticsearch:verify-jaeger-plugin-moduleinfo}
+    kubectl get moduleinfo -l cpaas.io/module-name=jaeger-cluster-plugin
+    ```
+
+    :::note
+    The platform assigns the resource a generated name, so query the `ModuleInfo` by label rather than by the name used in the manifest.
+    :::
+
+### Reading the image addresses
+
+Run the following commands against the target cluster. The exported variables are used in the later steps:
+
+```bash {name=upgrade-tracing-elasticsearch:get-plugin-images}
+export JAEGER_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest -o jsonpath='{.data.jaeger-image}')
+export JAEGER_ES_ROLLOVER_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest -o jsonpath='{.data.jaeger-es-rollover-image}')
+export JOAUTH2_PROXY_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest -o jsonpath='{.data.oauth2-proxy-image}')
+
+echo "${JAEGER_IMAGE}"
+echo "${JAEGER_ES_ROLLOVER_IMAGE}"
+echo "${JOAUTH2_PROXY_IMAGE}"
+```
+
+## Upgrading the Alauda Build of OpenTelemetry v2 Operator \{#upgrading-the-operator}
+
+The Operator is subscribed with the `Manual` approval strategy, so the upgrade must be approved explicitly. For general background on Operator upgrades, see <ExternalSiteLink name="acp" href="/extend/operator.html" children="Operator" />.
+
+### Upgrading via the web console
+
+Choose one of the following methods:
+
+- **Batch upgrade**: navigate to **Platform Management** > **Cluster Management** > **Clusters** > *cluster* > **Functional Components**, and upgrade **Alauda Build of OpenTelemetry v2**.
+- **Individual upgrade**: navigate to **Administrator** > **Marketplace** > **OperatorHub**, open **Alauda Build of OpenTelemetry v2**, and approve the pending upgrade request.
+
+### Upgrading via the CLI
+
+1. Confirm that the target version is available in the subscribed channel:
+
+    ```bash {name=upgrade-tracing-elasticsearch:check-operator-versions}
+    kubectl -ncpaas-system get packagemanifest opentelemetry-operator2 \
+      -o jsonpath='{range .status.channels[*]}{.name}{"\t"}{.currentCSV}{"\n"}{end}'
+    ```
+
+2. Approve the pending `InstallPlan`:
+
+    ```bash {name=upgrade-tracing-elasticsearch:approve-installplan}
+    PLAN=$(kubectl -nopentelemetry-operator2 get subscription opentelemetry-operator2 \
+      -o jsonpath='{.status.installPlanRef.name}')
+    kubectl -nopentelemetry-operator2 patch installplan "${PLAN}" \
+      --type=json -p='[{"op": "replace", "path": "/spec/approved", "value": true}]'
+    ```
+
+3. Wait until the new `ClusterServiceVersion` reaches the `Succeeded` phase:
+
+    ```bash {name=upgrade-tracing-elasticsearch:verify-operator-csv}
+    kubectl -nopentelemetry-operator2 get csv
+    ```
+
+    **Example output**
+
+    ```text {name=upgrade-tracing-elasticsearch:verify-operator-csv-output}
+    NAME                                  DISPLAY                            VERSION      REPLACES                              PHASE
+    opentelemetry-operator2.v0.157.0-r1   Alauda Build of OpenTelemetry v2   0.157.0-r1   opentelemetry-operator2.v0.147.0-r0   Succeeded
+    ```
+
+:::note
+The Operator upgrade restarts the managed collectors. The `otel` Collector does not pin `spec.image`, so it immediately picks up the Collector version shipped with the new Operator, while the Jaeger instance stays on the image pinned in `spec.image` until step 5. The renamed component types remain available as deprecated aliases, so the Collector keeps running and only logs deprecation warnings until the next step.
+:::
+
+## Updating the OpenTelemetry Collector \{#updating-the-opentelemetry-collector}
+
+**Procedure**
+
+1. Create a file named `otel-upgrade-patch.yaml` with the following content:
+
+    ```yaml title="otel-upgrade-patch.yaml" {name=upgrade-tracing-elasticsearch:otel-upgrade-patch-yaml}
+    spec:
+      config:
+        exporters:
+          otlp/traces: null # [!code callout]
+          otlp_grpc/traces:
+            endpoint: "${JAEGER_INSTANCE_NAME}-collector.${JAEGER_NS}.svc.cluster.local:4317"
+            tls:
+              insecure: true
+          prometheus:
+            add_metric_suffixes: null # [!code callout]
+            translation_strategy: UnderscoreEscapingWithoutSuffixes
+        service:
+          pipelines:
+            traces:
+              exporters: [debug, otlp_grpc/traces]
+          telemetry:
+            metrics:
+              readers: # [!code callout]
+                - pull:
+                    exporter:
+                      prometheus:
+                        host: 0.0.0.0
+                        port: 8888
+    ```
+
+    <Callouts>
+      1. The `otlp` exporter type is renamed to `otlp_grpc`. Setting the old key to `null` removes it, and the new key recreates the exporter with the same endpoint.
+      2. `add_metric_suffixes` is deprecated and silently ignored. `translation_strategy: UnderscoreEscapingWithoutSuffixes` keeps the metric names free of Prometheus-style suffixes.
+      3. The `without_scope_info`, `without_type_suffix`, and `without_units` settings of the Prometheus reader now default to `true` and are dropped. Because `readers` is a list, the patch replaces it as a whole. The exposed metric names are unchanged.
+    </Callouts>
+
+2. Render the patch with `envsubst` and apply it:
+
+    ```bash {name=upgrade-tracing-elasticsearch:apply-otel-patch}
+    kubectl patch opentelemetrycollector otel -n ${JAEGER_NS} \
+      --type=merge -p "$(envsubst < otel-upgrade-patch.yaml)"
+    ```
+
+3. Wait for the Collector to restart, and confirm that it starts without deprecation warnings:
+
+    ```bash {name=upgrade-tracing-elasticsearch:verify-otel-collector}
+    kubectl rollout status deployment/otel-collector -n ${JAEGER_NS} --timeout=180s
+    kubectl logs deployment/otel-collector -n ${JAEGER_NS} --tail=200 \
+      | grep -i "deprecated" || echo "No deprecation warnings"
+    ```
+
+### (Optional) Updating the Collector for Service Performance Monitoring \{#updating-the-collector-for-spm}
+
+Rename the `loadbalancing` exporter that routes spans to the Jaeger tier. Apply this patch right after the previous one: in between, spans reach Jaeger through the direct exporter instead of being routed by `service`, which fragments the RED metrics if the Jaeger tier runs with more than one replica.
+
+1. Create a file named `otel-spm-upgrade-patch.yaml` with the following content:
+
+    ```yaml title="otel-spm-upgrade-patch.yaml" {name=upgrade-tracing-elasticsearch-spm:otel-spm-upgrade-patch-yaml}
+    spec:
+      config:
+        exporters:
+          otlp_grpc/traces: null # not used when spans are routed through load_balancing
+          loadbalancing: null
+          load_balancing:
+            routing_key: service
+            protocol:
+              otlp: # a configuration field of the load_balancing exporter, not a component type name
+                tls:
+                  insecure: true
+            resolver:
+              dns:
+                hostname: ${JAEGER_INSTANCE_NAME}-collector-headless.${JAEGER_NS}.svc.cluster.local
+                port: "4317"
+        service:
+          pipelines:
+            traces:
+              exporters: [debug, load_balancing]
+    ```
+
+2. Render the patch with `envsubst` and apply it:
+
+    ```bash {name=upgrade-tracing-elasticsearch-spm:apply-otel-patch}
+    kubectl patch opentelemetrycollector otel -n ${JAEGER_NS} \
+      --type=merge -p "$(envsubst < otel-spm-upgrade-patch.yaml)"
+
+    kubectl rollout status deployment/otel-collector -n ${JAEGER_NS} --timeout=180s
+    ```
+
+## Updating the Elasticsearch Index Templates \{#updating-the-index-templates}
+
+Jaeger v2.20.0 writes additional span fields, such as `scopeTags` and `references.traceState`. Re-run the `jaeger-es-rollover` initialization with the new image so that the index templates are updated and the indices created by future rollovers carry the new mappings.
+
+The initialization is idempotent: it overwrites the index templates, and skips indices and aliases that already exist. Existing data is not modified.
+
+**Procedure**
+
+1. Run the initialization Job:
+
+    ```bash {name=upgrade-tracing-elasticsearch:rerun-rollover-init}
+    kubectl apply -n ${JAEGER_NS} -f - <<EOF
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: jaeger-es-rollover-init
+    spec:
+      template:
+        spec:
+          containers:
+          - name: es-rollover-init
+            image: "${JAEGER_ES_ROLLOVER_IMAGE}"
+            args:
+              - init
+              - "${ES_ENDPOINT}"
+            env:
+            - name: INDEX_PREFIX
+              value: "${JAEGER_ES_INDEX_PREFIX}"
+            - name: ES_USE_ILM
+              value: "true"
+            - name: ES_TLS_ENABLED
+              value: "true"
+            - name: ES_TLS_SKIP_HOST_VERIFY
+              value: "true"
+            - name: ES_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: es-credentials
+                  key: ES_USER
+            - name: ES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: es-credentials
+                  key: ES_PASS
+          restartPolicy: Never
+      backoffLimit: 3
+    EOF
+
+    kubectl wait --for=condition=complete job/jaeger-es-rollover-init -n ${JAEGER_NS} --timeout=180s
+    kubectl delete job jaeger-es-rollover-init -n ${JAEGER_NS}
+    ```
+
+2. Verify that the span index template now contains the new fields:
+
+    ```bash {name=upgrade-tracing-elasticsearch:verify-index-template}
+    ES_USER=$(kubectl -n${JAEGER_NS} get secret es-credentials -o jsonpath='{.data.ES_USER}' | base64 -d)
+    ES_PASS=$(kubectl -n${JAEGER_NS} get secret es-credentials -o jsonpath='{.data.ES_PASS}' | base64 -d)
+    curl -k -sS -u "${ES_USER}:${ES_PASS}" \
+      "${ES_ENDPOINT}/_index_template/${JAEGER_ES_INDEX_PREFIX}-jaeger-span" | grep -o scopeTags
+    ```
+
+## Updating the Alauda Build of Jaeger v2 \{#updating-jaeger}
+
+**Procedure**
+
+1. Update the OAuth2 Proxy sidecar image. Because `additionalContainers` is a list that a merge patch would replace as a whole, this container is updated with a JSON patch of its own. The Jaeger container is still running the previous version at this point, so this restart is safe:
+
+    ```bash {name=upgrade-tracing-elasticsearch:patch-oauth2-proxy-image}
+    kubectl patch opentelemetrycollector ${JAEGER_INSTANCE_NAME} -n ${JAEGER_NS} --type=json \
+      -p "[{\"op\": \"replace\", \"path\": \"/spec/additionalContainers/0/image\", \"value\": \"${JOAUTH2_PROXY_IMAGE}\"}]"
+    ```
+
+2. Create a file named `jaeger-upgrade-patch.yaml` with the following content. The image and the configuration must be changed together, so both are part of the same patch:
+
+    ```yaml title="jaeger-upgrade-patch.yaml" {name=upgrade-tracing-elasticsearch:jaeger-upgrade-patch-yaml}
+    spec:
+      image: "${JAEGER_IMAGE}"
+      config:
+        extensions:
+          jaeger_storage:
+            backends:
+              es_storage:
+                elasticsearch:
+                  use_aliases: null # [!code callout]
+                  use_ilm: null
+                  max_trace_duration: "${JAEGER_MAX_TRACE_DURATION}" # [!code callout]
+                  indices:
+                    spans:
+                      rotation: # [!code callout]
+                        auto_rollover: {}
+                    services:
+                      rotation:
+                        auto_rollover: {}
+                    dependencies:
+                      rotation:
+                        auto_rollover: {}
+                    sampling:
+                      rotation:
+                        auto_rollover: {}
+        service:
+          telemetry:
+            resource: null # [!code callout]
+            metrics:
+              level: detailed
+              readers: # [!code callout]
+                - pull:
+                    exporter:
+                      prometheus:
+                        host: 0.0.0.0
+                        port: 8888
+    ```
+
+    <Callouts>
+      1. The legacy rotation flags are rejected since Jaeger v2.20.0 and must be removed.
+      2. `max_trace_duration` widens the query time range on both sides so that spans extending beyond the search window are still found. See [Query Time Range](../configuration/storage-backends/elasticsearch.mdx#query-time-range).
+      3. `rotation.auto_rollover` replaces `use_aliases` and `use_ilm`. Its default alias names match the aliases created by the `jaeger-es-rollover` initialization, so no data, alias, or ILM policy has to change. Leave `auto_rollover.policy_name` empty, because the ILM policy reference is already embedded in the index templates. See [Index Management Strategies](../configuration/storage-backends/elasticsearch.mdx#index-management-strategies).
+      4. The Operator parses `service.telemetry.resource` as a flat map of strings and silently discards the whole `service.telemetry` section if it is not. Jaeger already reports its own `service.name` and `service.version`, so the block is removed rather than migrated.
+      5. As for the `otel` Collector, the `without_*` settings now default to `true` and are dropped by replacing the `readers` list.
+    </Callouts>
+
+3. Render the patch with `envsubst`, apply it, and wait for Jaeger to restart:
+
+    ```bash {name=upgrade-tracing-elasticsearch:apply-jaeger-patch}
+    kubectl patch opentelemetrycollector ${JAEGER_INSTANCE_NAME} -n ${JAEGER_NS} \
+      --type=merge -p "$(envsubst < jaeger-upgrade-patch.yaml)"
+
+    kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector -n ${JAEGER_NS} --timeout=300s
+    ```
+
+### (Optional) Updating Jaeger for Service Performance Monitoring \{#updating-jaeger-for-spm}
+
+1. Create a file named `jaeger-spm-upgrade-patch.yaml` with the following content:
+
+    ```yaml title="jaeger-spm-upgrade-patch.yaml" {name=upgrade-tracing-elasticsearch-spm:jaeger-spm-upgrade-patch-yaml}
+    spec:
+      config:
+        connectors:
+          spanmetrics: null
+          span_metrics: {}
+        exporters:
+          prometheus:
+            add_metric_suffixes: null
+            translation_strategy: UnderscoreEscapingWithoutSuffixes
+        service:
+          pipelines:
+            traces:
+              exporters: [debug, jaeger_storage_exporter, span_metrics]
+            metrics/spanmetrics:
+              receivers: [span_metrics]
+    ```
+
+2. Render the patch with `envsubst`, apply it, and wait for Jaeger to restart:
+
+    ```bash {name=upgrade-tracing-elasticsearch-spm:apply-jaeger-patch}
+    kubectl patch opentelemetrycollector ${JAEGER_INSTANCE_NAME} -n ${JAEGER_NS} \
+      --type=merge -p "$(envsubst < jaeger-spm-upgrade-patch.yaml)"
+
+    kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector -n ${JAEGER_NS} --timeout=300s
+    ```
+
+:::note
+This rename applies to the Jaeger distribution. A standalone OpenTelemetry Collector only registers `span_metrics` from Collector 0.152.0 onwards, so verify the Collector version before renaming the connector in a front Collector configuration.
+:::
+
+## Verification \{#verification}
+
+1. Confirm the component versions and that all Pods are ready:
+
+    ```bash {name=upgrade-tracing-elasticsearch:verify-versions}
+    kubectl -n${JAEGER_NS} get opentelemetrycollector
+    kubectl -n${JAEGER_NS} get pods
+    ```
+
+2. Confirm that Jaeger starts without deprecation warnings:
+
+    ```bash {name=upgrade-tracing-elasticsearch:verify-jaeger-logs}
+    kubectl logs deployment/${JAEGER_INSTANCE_NAME}-collector -n ${JAEGER_NS} \
+      -c otc-container --tail=300 | grep -iE "warn|error" || echo "No warnings"
+    ```
+
+3. Generate sample traces and confirm that they are stored and queryable, as described in the [Verification](../installing/installing-distributed-tracing-elasticsearch.mdx#verification) section of the installation procedure. If SPM is enabled, also open the **Monitor** tab in the Jaeger UI and confirm that RED metrics are shown for the generated service.
