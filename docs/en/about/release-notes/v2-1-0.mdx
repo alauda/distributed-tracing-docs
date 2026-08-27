@@ -36,7 +36,7 @@ Only the features documented on this site are supported. Undocumented features a
 
 - **Configurable query time range for Elasticsearch and OpenSearch**: The `max_trace_duration` option controls how far beyond the requested time window the query service looks for spans belonging to a trace, replacing the previously hardcoded padding. See [Query Time Range](../../configuration/storage-backends/elasticsearch.mdx#query-time-range).
 
-## Upgrade Notes
+## Upgrade Notes \{#upgrade-notes}
 
 This release moves from Alauda Build of OpenTelemetry v2 Operator 0.147.0 and Jaeger 2.16.0 to Operator 0.157.0 and Jaeger 2.20.0. The following changes can alter the behavior of an existing configuration. Review them before upgrading, and follow [Upgrading Alauda Distributed Tracing with Elasticsearch](../../upgrading/upgrading-distributed-tracing-elasticsearch.mdx) for the procedure.
 
