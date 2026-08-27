@@ -2,7 +2,7 @@
 # Alauda Distributed Tracing 安装文档测试脚本（OpenSearch 后端）
 # 对应文档: docs/en/installing/installing-distributed-tracing-opensearch.mdx
 # 覆盖范围: 「Installing the Alauda Build of Jaeger v2 Cluster Plugin」（仅 CLI 安装方案）、
-#           「Deploying the Alauda Build of Jaeger v2」（含 jaeger-es-index-cleaner）、
+#           「Deploying the Alauda Build of Jaeger v2」（含 ISM policy 与 jaeger-es-rollover init）、
 #           「Deploying the OpenTelemetry Collector」「Verification」「(Optional) SPM」章节。
 #
 # 与 Elasticsearch 版的差异：
@@ -11,7 +11,8 @@
 #     PKG_TOPOLVM_OPERATOR_URL 齐全时，步骤 0 自动安装 TopoLVM + OpenSearch 并用实际
 #     安装结果覆盖 TRACING_OPENSEARCH_*（见 projects/tracing/opensearch.sh）；
 #     不满足时降级用手动 TRACING_OPENSEARCH_ENDPOINT/USER/PASS，两者皆缺则 SKIPPED。
-#   - 无 ILM Policy / rollover-init 步骤；改用 jaeger-es-index-cleaner 按日索引清理。
+#   - 生命周期管理走 OpenSearch ISM：先建 ISM policy，再跑 jaeger-es-rollover init，
+#     Jaeger 侧使用 rotation.auto_rollover（不再部署 jaeger-es-index-cleaner CronJob）。
 
 set -e
 
@@ -34,6 +35,49 @@ _in_otel_repo() {
     local rc=$?
     popd >/dev/null
     return $rc
+}
+
+# 清理上一次测试遗留的 ISM policy。
+# 文档给出的是全新安装场景的 PUT；OpenSearch 对已存在的 policy 直接 PUT 会返回
+# version_conflict_engine_exception（409，需带 if_seq_no/if_primary_term），
+# 因此重复执行前先删掉同名 policy，把环境还原成全新安装的形态。
+_reset_ism_policy() {
+    local code
+    code=$(curl -k -sS -o /dev/null -w '%{http_code}' \
+        -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+        -X DELETE "${OPENSEARCH_ENDPOINT}/_plugins/_ism/policies/jaeger-ism-policy" 2>/dev/null || true)
+    case "$code" in
+        200) log_info "已删除遗留的 ISM policy jaeger-ism-policy" ;;
+        404) log_info "ISM policy jaeger-ism-policy 不存在，无需清理" ;;
+        *)   log_warn "删除 ISM policy 返回 HTTP ${code}，继续执行" ;;
+    esac
+    return 0
+}
+
+# 校验 ISM 是否已接管 span 写索引。
+# ISM 靠后台 sweep 发现新索引（coordinator.sweep_period 默认 10 分钟，评估再叠加
+# job_interval 5 分钟与 jitter），因此这里最多等 TRACING_ISM_ATTACH_RETRIES × 间隔；
+# 超时只告警不失败——此时 init 建出的模板/别名已在上一步断言过，ISM 调度延迟不应判红。
+_verify_ism_attached() {
+    local write_index
+    write_index=$(curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+        "${OPENSEARCH_ENDPOINT}/_cat/aliases/${JAEGER_ES_INDEX_PREFIX}-jaeger-span-write?h=index,is_write_index" \
+        2>/dev/null | awk '$2=="true"{print $1}' | head -n1)
+    if [ -z "$write_index" ]; then
+        log_error "未找到 ${JAEGER_ES_INDEX_PREFIX}-jaeger-span-write 的写索引"
+        return 1
+    fi
+    log_info "span 写索引: ${write_index}"
+
+    if retry_command "curl -k -sS -u '${OPENSEARCH_USER}:${OPENSEARCH_PASS}' \
+            '${OPENSEARCH_ENDPOINT}/_plugins/_ism/explain/${write_index}' \
+            | grep -q '\"policy_id\":\"jaeger-ism-policy\"'" \
+            "${TRACING_ISM_ATTACH_RETRIES:-15}" "${TRACING_ISM_ATTACH_INTERVAL:-60}"; then
+        log_success "ISM policy jaeger-ism-policy 已接管 ${write_index}"
+    else
+        log_warn "等待超时：${write_index} 仍未挂载 ISM policy（ISM sweep 延迟或 ism_template 不匹配），请人工复核"
+    fi
+    return 0
 }
 
 # 部署 telemetrygen 生成测试 trace。
@@ -223,29 +267,75 @@ test_installing_distributed_tracing_opensearch() {
         return 1
     }
 
-    # 步骤 7: 创建 OAuth2 Proxy Secret
-    log_info "步骤 7: 创建 OAuth2 Proxy Secret"
+    # 步骤 7: 创建 ISM Policy（文档要求 policy 必须先于 rollover init 存在：
+    # OpenSearch 靠 policy 自带的 ism_template 匹配新建索引来挂载，没有 ES 那种
+    # 索引模板里的 index.lifecycle.name）
+    log_info "步骤 7: 创建 ISM Policy"
+    _reset_ism_policy
+    runme run install-tracing-opensearch:create-ism-policy || {
+        log_error "创建 ISM Policy 失败"
+        return 1
+    }
+
+    # 步骤 7.1: 验证 ISM Policy
+    log_info "步骤 7.1: 验证 ISM Policy"
+    runme run install-tracing-opensearch:verify-ism-policy || {
+        log_error "验证 ISM Policy 失败"
+        return 1
+    }
+
+    # 步骤 8: 创建 jaeger-es-rollover-init Job
+    log_info "步骤 8: 创建 rollover-init Job"
+    runme run install-tracing-opensearch:create-rollover-init-job || {
+        log_error "创建 rollover-init Job 失败"
+        return 1
+    }
+
+    # 步骤 8.1: 等待 Job 完成并验证索引模板/别名
+    log_info "步骤 8.1: 等待 rollover-init Job 完成并验证"
+    runme run install-tracing-opensearch:verify-rollover-init || {
+        log_error "验证 rollover-init 失败"
+        return 1
+    }
+
+    # 步骤 8.2: 验证 ISM 已接管写索引（文档 verify-ism-attached 只打印，断言在此）
+    log_info "步骤 8.2: 验证 ISM 已接管 span 写索引"
+    runme run install-tracing-opensearch:verify-ism-attached || {
+        log_error "查询 ISM explain 失败"
+        return 1
+    }
+    _verify_ism_attached || return 1
+
+    # 步骤 9: 清理 rollover-init Job
+    log_info "步骤 9: 清理 rollover-init Job"
+    runme run install-tracing-opensearch:delete-rollover-init-job || {
+        log_error "清理 rollover-init Job 失败"
+        return 1
+    }
+
+    # 步骤 10: 创建 OAuth2 Proxy Secret
+    log_info "步骤 10: 创建 OAuth2 Proxy Secret"
     runme run install-tracing-opensearch:create-oauth2-proxy-secret || {
         log_error "创建 OAuth2 Proxy Secret 失败"
         return 1
     }
 
-    # 步骤 8: 生成 jaeger.yaml 到 /tmp（envsubst apply 依赖 cwd 中存在该文件）
-    log_info "步骤 8: 生成 /tmp/jaeger.yaml"
+    # 步骤 11: 生成 jaeger.yaml 到 /tmp（envsubst apply 依赖 cwd 中存在该文件）
+    log_info "步骤 11: 生成 /tmp/jaeger.yaml"
     runme print install-tracing-opensearch:jaeger-yaml > /tmp/jaeger.yaml || {
         log_error "生成 jaeger.yaml 失败"
         return 1
     }
 
-    # 步骤 9: envsubst 渲染并 apply（需在 /tmp 目录下执行）
-    log_info "步骤 9: 渲染并应用 jaeger.yaml"
+    # 步骤 12: envsubst 渲染并 apply（需在 /tmp 目录下执行）
+    log_info "步骤 12: 渲染并应用 jaeger.yaml"
     kubectl_apply_runme_block "install-tracing-opensearch:apply-jaeger" "/tmp/" || {
         log_error "应用 jaeger.yaml 失败"
         return 1
     }
 
-    # 步骤 9.1: 等待 OpenTelemetryCollector 状态副本数收敛
-    log_info "步骤 9.1: 等待 OpenTelemetryCollector status.scale.statusReplicas=1/1"
+    # 步骤 12.1: 等待 OpenTelemetryCollector 状态副本数收敛
+    log_info "步骤 12.1: 等待 OpenTelemetryCollector status.scale.statusReplicas=1/1"
     kubectl wait "opentelemetrycollector/${JAEGER_INSTANCE_NAME}" \
         -n "${JAEGER_NS}" \
         --for=jsonpath='{.status.scale.statusReplicas}'=1/1 \
@@ -254,31 +344,10 @@ test_installing_distributed_tracing_opensearch() {
         return 1
     }
 
-    # 步骤 10: 等待 Jaeger collector deployment 就绪
-    log_info "步骤 10: 等待 Jaeger collector 就绪"
+    # 步骤 13: 等待 Jaeger collector deployment 就绪
+    log_info "步骤 13: 等待 Jaeger collector 就绪"
     runme run install-tracing-opensearch:wait-jaeger-rollout || {
         log_error "等待 Jaeger collector 就绪失败"
-        return 1
-    }
-
-    # 步骤 11: 设置 jaeger-es-index-cleaner 环境变量
-    log_info "步骤 11: 设置 index-cleaner 环境变量"
-    eval "$(runme print install-tracing-opensearch:set-index-cleaner-defaults)" || {
-        log_error "设置 index-cleaner 环境变量失败"
-        return 1
-    }
-
-    # 步骤 12: 生成 jaeger-index-cleaner.yaml 到 /tmp
-    log_info "步骤 12: 生成 /tmp/jaeger-index-cleaner.yaml"
-    runme print install-tracing-opensearch:index-cleaner-yaml > /tmp/jaeger-index-cleaner.yaml || {
-        log_error "生成 jaeger-index-cleaner.yaml 失败"
-        return 1
-    }
-
-    # 步骤 13: 渲染并部署 index-cleaner CronJob（需在 /tmp 目录下执行）
-    log_info "步骤 13: 部署 jaeger-es-index-cleaner CronJob"
-    kubectl_apply_runme_block "install-tracing-opensearch:apply-index-cleaner" "/tmp/" || {
-        log_error "部署 jaeger-es-index-cleaner CronJob 失败"
         return 1
     }
 
