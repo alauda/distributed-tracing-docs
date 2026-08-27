@@ -425,7 +425,3 @@ This rename applies to the Jaeger distribution. A standalone OpenTelemetry Colle
     ```
 
 3. Generate sample traces and confirm that they are stored and queryable, as described in the [Verification](../installing/installing-distributed-tracing-elasticsearch.mdx#verification) section of the installation procedure. If SPM is enabled, also open the **Monitor** tab in the Jaeger UI and confirm that RED metrics are shown for the generated service.
-
-    :::note
-    The SpanMetrics Connector aggregates in memory and starts from an empty state after the restart, and the metrics must be scraped by the monitoring stack before Jaeger can read them back. Allow one to two scrape intervals after generating traces before the **Monitor** tab reports data.
-    :::
