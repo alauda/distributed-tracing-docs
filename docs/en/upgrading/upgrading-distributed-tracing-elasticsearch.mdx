@@ -274,6 +274,8 @@ The initialization is idempotent: it overwrites the index templates, and skips i
               value: "${JAEGER_ES_INDEX_PREFIX}"
             - name: ES_USE_ILM
               value: "true"
+            - name: ADAPTIVE_SAMPLING
+              value: "true"
             - name: ES_TLS_ENABLED
               value: "true"
             - name: ES_TLS_SKIP_HOST_VERIFY
