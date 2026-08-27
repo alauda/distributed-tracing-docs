@@ -122,7 +122,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     fi
 
     export JAEGER_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest -o jsonpath='{.data.jaeger-image}')
-    export JAEGER_ES_INDEX_CLEANER_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest -o jsonpath='{.data.jaeger-es-index-cleaner-image}')
+    export JAEGER_ES_ROLLOVER_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest -o jsonpath='{.data.jaeger-es-rollover-image}')
     export JOAUTH2_PROXY_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest -o jsonpath='{.data.oauth2-proxy-image}')
     ```
 
@@ -139,8 +139,6 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     export JAEGER_INSTANCE_NAME="jaeger"
     # Index prefix for Jaeger data
     export JAEGER_ES_INDEX_PREFIX="acp-${CLUSTER_NAME}"
-    # Maximum age of spans the Jaeger query service will search. Keep aligned with the index-cleaner retention.
-    export JAEGER_MAX_SPAN_AGE="168h"
     # Maximum expected duration of a single trace. Controls how far beyond the search window spans are looked up.
     export JAEGER_MAX_TRACE_DURATION="1h"
     # Base path for the Jaeger UI
@@ -165,7 +163,171 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     kubectl get secret opensearch-credentials -n ${JAEGER_NS}
     ```
 
-5. Create a Secret for the OAuth2 Proxy, which is used to integrate the Jaeger UI with the Alauda Container Platform authentication:
+5. Create an [ISM (Index State Management) policy](../configuration/storage-backends/opensearch.mdx#ism-support) in OpenSearch. Jaeger uses ISM to manage index rollover and retention:
+
+    ```bash {name=install-tracing-opensearch:create-ism-policy}
+    curl -k -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X PUT \
+      "${OPENSEARCH_ENDPOINT}/_plugins/_ism/policies/jaeger-ism-policy" \
+      -H 'Content-Type: application/json' \
+      --data-binary @- << EOF
+    {
+      "policy": {
+        "description": "Jaeger index rollover and retention",
+        "default_state": "hot",
+        "states": [
+          {
+            "name": "hot",
+            "actions": [
+              {
+                "rollover": {
+                  "min_primary_shard_size": "50gb",
+                  "min_index_age": "1d"
+                }
+              }
+            ],
+            "transitions": [
+              {
+                "state_name": "delete",
+                "conditions": {
+                  "min_index_age": "7d"
+                }
+              }
+            ]
+          },
+          {
+            "name": "delete",
+            "actions": [
+              {
+                "delete": {}
+              }
+            ],
+            "transitions": []
+          }
+        ],
+        "ism_template": [
+          { "index_patterns": ["${JAEGER_ES_INDEX_PREFIX}-jaeger-span-0*"], "priority": 100 },
+          { "index_patterns": ["${JAEGER_ES_INDEX_PREFIX}-jaeger-service-0*"], "priority": 100 },
+          { "index_patterns": ["${JAEGER_ES_INDEX_PREFIX}-jaeger-dependencies-0*"], "priority": 100 },
+          { "index_patterns": ["${JAEGER_ES_INDEX_PREFIX}-jaeger-sampling-0*"], "priority": 100 }
+        ]
+      }
+    }
+    EOF
+    ```
+
+    **Key fields:**
+
+    * **`rollover.min_primary_shard_size`**, in the `hot` state: Maximum size of a single primary shard. When the shard exceeds this size, a rollover is triggered to create a new index. Default: `50gb`.
+    * **`rollover.min_index_age`**, in the `hot` state: Maximum age of the index before a rollover is triggered. Default: `1d` (1 day).
+    * **`transitions[0].conditions.min_index_age`**, in the `hot` state: Age, counted from index creation, at which an index moves to the `delete` state. Default: `7d` (7 days).
+    * **`ism_template`**: Attaches the policy to every newly created index whose name matches one of the patterns. OpenSearch has no equivalent of the Elasticsearch `index.lifecycle.name` template setting, so this is the only binding mechanism, and the policy must therefore exist **before** the next step creates the indices.
+
+    :::warning
+    Keep the `-0*` suffix in the `ism_template` patterns. It matches only the numbered rollover indices, such as `-000001` and `-000002`. A broader pattern such as `-*` also matches date-suffixed indices created later, which ISM cannot roll over.
+    :::
+
+    Verify the ISM policy:
+
+    ```bash {name=install-tracing-opensearch:verify-ism-policy}
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+      "${OPENSEARCH_ENDPOINT}/_plugins/_ism/policies/jaeger-ism-policy?pretty"
+    ```
+
+    The output should display the policy details, including the `hot` and `delete` states.
+
+    :::note
+    OpenSearch rejects a `PUT` on a policy that already exists with a `version_conflict_engine_exception`. See [Updating an ISM Policy](../configuration/storage-backends/opensearch.mdx#updating-an-ism-policy) for how to change the retention of a running deployment.
+    :::
+
+6. [Initialize](../configuration/storage-backends/opensearch.mdx#index-rollover) index aliases and templates using the `jaeger-es-rollover` tool. This prepares OpenSearch for Jaeger data storage:
+
+    ```bash {name=install-tracing-opensearch:create-rollover-init-job}
+    kubectl apply -n ${JAEGER_NS} -f - <<EOF
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: jaeger-es-rollover-init
+    spec:
+      template:
+        spec:
+          containers:
+          - name: es-rollover-init
+            image: "${JAEGER_ES_ROLLOVER_IMAGE}"
+            args:
+              - init
+              - "${OPENSEARCH_ENDPOINT}"
+            env:
+            - name: INDEX_PREFIX
+              value: "${JAEGER_ES_INDEX_PREFIX}"
+            - name: ES_USE_ILM
+              value: "true"
+            - name: ES_ILM_POLICY_NAME
+              value: "jaeger-ism-policy"
+            - name: ADAPTIVE_SAMPLING
+              value: "true"
+            - name: ES_TLS_ENABLED
+              value: "true"
+            - name: ES_TLS_SKIP_HOST_VERIFY
+              value: "true"
+            - name: ES_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-credentials
+                  key: OPENSEARCH_USER
+            - name: ES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-credentials
+                  key: OPENSEARCH_PASS
+          restartPolicy: Never
+      backoffLimit: 3
+    EOF
+    ```
+
+    :::note
+    The tool keeps its `ES_`-prefixed variable names on OpenSearch. `ES_USE_ILM=true` selects lifecycle-managed rollover, which the tool resolves to the OpenSearch ISM API, and `ES_ILM_POLICY_NAME` names the ISM policy whose existence it verifies. `ADAPTIVE_SAMPLING=true` additionally creates the `sampling` aliases, which the Jaeger configuration below expects.
+    :::
+
+    Wait for the Job to complete, then verify that the index templates and aliases were created:
+
+    ```bash {name=install-tracing-opensearch:verify-rollover-init}
+    kubectl wait --for=condition=complete job/jaeger-es-rollover-init \
+      -n ${JAEGER_NS} --timeout=120s
+
+    # Verify index templates
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+      "${OPENSEARCH_ENDPOINT}/_cat/templates/${JAEGER_ES_INDEX_PREFIX}-jaeger-*?v"
+
+    # Verify index aliases
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+      "${OPENSEARCH_ENDPOINT}/_cat/aliases/${JAEGER_ES_INDEX_PREFIX}-jaeger-*?v"
+    ```
+
+    The expected results are:
+    - The Job status is `Complete`.
+    - Index templates named `${JAEGER_ES_INDEX_PREFIX}-jaeger-(span|service|dependencies|sampling)` exist in OpenSearch.
+    - The `${JAEGER_ES_INDEX_PREFIX}-jaeger-*-read` and `${JAEGER_ES_INDEX_PREFIX}-jaeger-*-write` aliases point to the initial `-000001` indices, and `is_write_index` is `true` on each write alias.
+
+    Confirm that ISM has taken the new indices over:
+
+    ```bash {name=install-tracing-opensearch:verify-ism-attached}
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+      "${OPENSEARCH_ENDPOINT}/_plugins/_ism/explain/${JAEGER_ES_INDEX_PREFIX}-jaeger-span-000001?pretty"
+    ```
+
+    The `index.plugins.index_state_management.policy_id` field should read `jaeger-ism-policy`.
+
+    :::note
+    ISM discovers new indices with a background sweep, so `policy_id` can remain `null` for several minutes. If it is still `null` afterwards, the `ism_template` patterns of the policy do not match the created index names. Correct the policy and attach it manually with `POST _plugins/_ism/add/<index>`.
+    :::
+
+7. Clean up the initialization Job after it completes:
+
+    ```bash {name=install-tracing-opensearch:delete-rollover-init-job}
+    kubectl delete job jaeger-es-rollover-init -n ${JAEGER_NS}
+    ```
+
+8. Create a Secret for the OAuth2 Proxy, which is used to integrate the Jaeger UI with the Alauda Container Platform authentication:
 
     ```bash {name=install-tracing-opensearch:create-oauth2-proxy-secret}
     # Generate a cookie secret for the OAuth2 Proxy:
@@ -178,7 +340,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
       --dry-run=client -o yaml | kubectl apply -f -
     ```
 
-6. Create a file named `jaeger.yaml` with the following content:
+9. Create a file named `jaeger.yaml` with the following content:
 
     ```yaml title="jaeger.yaml" {name=install-tracing-opensearch:jaeger-yaml}
     apiVersion: opentelemetry.io/v1beta1
@@ -271,38 +433,30 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
                   tls:
                     insecure_skip_verify: true
                   service_cache_ttl: 12h # [!code callout]
-                  max_span_age: "${JAEGER_MAX_SPAN_AGE}" # [!code callout]
                   max_trace_duration: "${JAEGER_MAX_TRACE_DURATION}" # [!code callout]
+                  create_mappings: false # [!code callout]
                   indices:
                     index_prefix: "${JAEGER_ES_INDEX_PREFIX}" # [!code callout]
                     spans:
                       shards: 5
                       replicas: 1
                       rotation: # [!code callout]
-                        periodic:
-                          date_layout: "2006-01-02"
-                          rollover_frequency: "day"
+                        auto_rollover: {}
                     services:
                       shards: 5
                       replicas: 1
                       rotation:
-                        periodic:
-                          date_layout: "2006-01-02"
-                          rollover_frequency: "day"
+                        auto_rollover: {}
                     dependencies:
                       shards: 5
                       replicas: 1
                       rotation:
-                        periodic:
-                          date_layout: "2006-01-02"
-                          rollover_frequency: "day"
+                        auto_rollover: {}
                     sampling:
                       shards: 5
                       replicas: 1
                       rotation:
-                        periodic:
-                          date_layout: "2006-01-02"
-                          rollover_frequency: "day"
+                        auto_rollover: {}
 
           jaeger_query: # [!code callout]
             storage:
@@ -377,124 +531,30 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
       4. Enables the Prometheus metrics endpoint for the Jaeger instance.
       5. The `jaeger_storage` extension configures the [OpenSearch backend](../configuration/storage-backends/opensearch.mdx#configuration) for storing trace data.
       6. The `opensearch` driver selects the OpenSearch storage implementation. Jaeger uses the same implementation for OpenSearch as for Elasticsearch.
-      7. `service_cache_ttl` controls how long the service name cache is kept. The default is `12h`. If the index retention is short, reduce this value to ensure the Jaeger UI can discover services promptly.
-      8. `max_span_age` is the maximum age of spans the query service will search, set here from `JAEGER_MAX_SPAN_AGE`. Keep it aligned with the `jaeger-es-index-cleaner` retention so the UI does not query indices that have already been deleted.
-      9. `max_trace_duration` is the maximum expected duration of a single trace, set here from `JAEGER_MAX_TRACE_DURATION`. The query service widens the time-range filter by this value on both sides so that spans extending beyond the search window are still found. The default is `24h`, which always adds one extra daily index on each side of every query; lower it if your traces are short-lived. See [Query Time Range](../configuration/storage-backends/opensearch.mdx#query-time-range).
-      10. `index_prefix` must match the `INDEX_PREFIX` used by the `jaeger-es-index-cleaner` CronJob, otherwise the cleaner cannot find the indices to delete. For more details on shards and replicas tuning, see [Shards and Replicas](../configuration/storage-backends/opensearch.mdx#shards-and-replicas).
-      11. The `rotation.periodic` strategy with `date_layout: "2006-01-02"` and `rollover_frequency: day` produces daily indices such as `${JAEGER_ES_INDEX_PREFIX}-jaeger-span-YYYY-MM-DD`. These plain daily indices (no rollover alias) are what the `jaeger-es-index-cleaner` matches by date suffix. The equivalent `date_layout` and `rollover_frequency` fields directly under `indices.<type>` are deprecated since Jaeger v2.20.0; do not set both forms for the same index type, because that combination is rejected at startup.
+      7. `service_cache_ttl` controls how long the service name cache is kept. The default is `12h`. If the ISM rollover-to-delete interval is short, reduce this value to ensure the Jaeger UI can discover services promptly.
+      8. `max_trace_duration` is the maximum expected duration of a single trace, set here from `JAEGER_MAX_TRACE_DURATION`. The query service widens the time-range filter by this value on both sides so that spans extending beyond the search window are still found. The default is `24h`; lower it if your traces are short-lived. See [Query Time Range](../configuration/storage-backends/opensearch.mdx#query-time-range).
+      9. `create_mappings` must be set to `false` when using the `auto_rollover` rotation strategy, because index templates and mappings are managed by the rollover initialization in step 6. Leaving it at the default silently removes the read alias and the ISM rollover alias from the templates.
+      10. `index_prefix` must match the `INDEX_PREFIX` used during the `jaeger-es-rollover` initialization in step 6. For more details on shards and replicas tuning, see [Shards and Replicas](../configuration/storage-backends/opensearch.mdx#shards-and-replicas).
+      11. The `rotation.auto_rollover` strategy uses read/write aliases and relies on the ISM policy created in step 5 to trigger index rollover and deletion automatically. The default alias names match those created by the rollover initialization. Because the read alias always resolves to every index attached to it, `max_span_age` has no effect with this strategy and is deliberately left unset; retention is governed by the ISM policy alone.
       12. The `jaeger_query` extension serves the Jaeger Query API and the Jaeger UI.
       13. The `additionalContainers` section defines the OAuth2 Proxy sidecar, which handles authentication for the Jaeger UI by integrating with the Alauda Container Platform Dex identity provider.
       14. Resource requests and limits for the OAuth2 Proxy sidecar. This container has low resource requirements since it only proxies authentication requests.
     </Callouts>
 
-7. Render the manifest with `envsubst` and apply the configuration:
+10. Render the manifest with `envsubst` and apply the configuration:
 
     ```bash {name=install-tracing-opensearch:apply-jaeger}
     envsubst < jaeger.yaml | kubectl apply -f -
     ```
 
-8. Wait for the Jaeger Pod to be ready:
+11. Wait for the Jaeger Pod to be ready:
 
     ```bash {name=install-tracing-opensearch:wait-jaeger-rollout}
     kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector \
       -n ${JAEGER_NS} --timeout=180s
     ```
 
-9. Deploy the `jaeger-es-index-cleaner` to periodically remove expired indices.
-
-    :::info Why not `jaeger-es-rollover init`?
-    The `init` subcommand of the `jaeger-es-rollover` tool calls the Elasticsearch `_ilm/policy/...` endpoint to verify that an ILM policy exists, but OpenSearch uses `_plugins/_ism/policies/...` instead. The two are not compatible, so `init` fails on OpenSearch (see [jaegertracing/jaeger#7121](https://github.com/jaegertracing/jaeger/issues/7121)).
-
-    This guide uses **daily indices plus `jaeger-es-index-cleaner`**, which does **not** rely on rollover aliases and therefore does not require `jaeger-es-rollover init`.
-    :::
-
-    **How it works**
-
-    The OpenSearch backend writes daily indices such as `acp-<cluster>-jaeger-span-2026-04-22`. The `jaeger-es-index-cleaner` matches indices named `<prefix>-jaeger-(span|service|dependencies|sampling)-YYYY-MM-DD`, compares the date suffix with "today minus N days", and deletes the indices that are older than the retention period.
-
-    Set the index-cleaner environment variables:
-
-    ```bash {name=install-tracing-opensearch:set-index-cleaner-defaults}
-    # Index retention in days: indices older than this are deleted
-    export JAEGER_INDEX_RETENTION_DAYS="7"
-    # Daily execution time (UTC). For example, "30 2 * * *" means 02:30 UTC.
-    export JAEGER_CLEANER_SCHEDULE="30 2 * * *"
-    ```
-
-    :::info
-    **Relationship between the retention parameter and Jaeger**
-
-    To prevent the Jaeger UI from querying indices that the cleaner has just deleted, keep `JAEGER_INDEX_RETENTION_DAYS` (the cleaner retention) consistent with Jaeger's `max_span_age` (`JAEGER_MAX_SPAN_AGE`). For example, set both to 7 days (`168h`).
-    :::
-
-10. Create `jaeger-index-cleaner.yaml` to deploy the index-cleaner as a `CronJob`:
-
-    ```yaml title="jaeger-index-cleaner.yaml" {name=install-tracing-opensearch:index-cleaner-yaml}
-    apiVersion: batch/v1
-    kind: CronJob
-    metadata:
-      name: ${JAEGER_INSTANCE_NAME}-es-index-cleaner
-      namespace: ${JAEGER_NS}
-    spec:
-      schedule: "${JAEGER_CLEANER_SCHEDULE}" # [!code callout]
-      concurrencyPolicy: Forbid # [!code callout]
-      successfulJobsHistoryLimit: 3
-      failedJobsHistoryLimit: 3
-      jobTemplate:
-        spec:
-          backoffLimit: 3
-          template:
-            spec:
-              restartPolicy: Never
-              containers:
-                - name: jaeger-es-index-cleaner
-                  image: "${JAEGER_ES_INDEX_CLEANER_IMAGE}"
-                  args: # [!code callout]
-                    - "${JAEGER_INDEX_RETENTION_DAYS}"
-                    - "${OPENSEARCH_ENDPOINT}"
-                  env:
-                    - name: INDEX_PREFIX # [!code callout]
-                      value: "${JAEGER_ES_INDEX_PREFIX}"
-                    - name: INDEX_DATE_SEPARATOR
-                      value: "-"
-                    - name: ES_TLS_ENABLED
-                      value: "true"
-                    - name: ES_TLS_SKIP_HOST_VERIFY # [!code callout]
-                      value: "true"
-                    - name: ES_USERNAME
-                      valueFrom:
-                        secretKeyRef:
-                          name: opensearch-credentials
-                          key: OPENSEARCH_USER
-                    - name: ES_PASSWORD
-                      valueFrom:
-                        secretKeyRef:
-                          name: opensearch-credentials
-                          key: OPENSEARCH_PASS
-                  resources:
-                    requests:
-                      cpu: 50m
-                      memory: 64Mi
-                    limits:
-                      cpu: 500m
-                      memory: 256Mi
-    ```
-
-    <Callouts>
-      1. `schedule` uses a standard Cron expression (UTC). Schedule it during off-peak hours; once per day is usually sufficient.
-      2. `concurrencyPolicy: Forbid` ensures a new Job is not started while the previous cleanup is still running, avoiding concurrent deletions that could briefly stress OpenSearch.
-      3. `args` are the positional arguments of `jaeger-es-index-cleaner`: the first is the **retention in days**, the second is the OpenSearch endpoint. `ROLLOVER=true` is intentionally not set, so the default daily-index matching mode is used.
-      4. `INDEX_PREFIX` must exactly match the Jaeger `indices.index_prefix` (here `acp-<cluster>`), otherwise the cleaner cannot find the corresponding indices.
-      5. `ES_TLS_SKIP_HOST_VERIFY=true` corresponds to the Jaeger-side `insecure_skip_verify: true` TLS policy. If you instead harden TLS with a self-signed CA, mount the CA into the container and set `ES_TLS_CA_FILE` to its path.
-    </Callouts>
-
-    Render and deploy the CronJob:
-
-    ```bash {name=install-tracing-opensearch:apply-index-cleaner}
-    envsubst < jaeger-index-cleaner.yaml | kubectl apply -f -
-    ```
-
-11. Label the namespace and create an Ingress to expose the Jaeger UI:
+12. Label the namespace and create an Ingress to expose the Jaeger UI:
 
     ```bash {name=install-tracing-opensearch:label-jaeger-ns}
     kubectl label namespace ${JAEGER_NS} cpaas.io/project=cpaas-system --overwrite

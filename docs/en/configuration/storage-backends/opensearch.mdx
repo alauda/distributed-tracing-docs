@@ -26,16 +26,144 @@ Shards and replicas are configuration values to take special attention to, becau
 
 ### Query Time Range \{#query-time-range}
 
-`max_span_age` and `max_trace_duration` behave the same way as for Elasticsearch, see [Query Time Range](./elasticsearch.mdx#query-time-range). Because Alauda Distributed Tracing always uses time-based indices (`rotation.periodic`) with OpenSearch, `max_span_age` is effective here, unlike with the alias-based rotation strategies of Elasticsearch. Align it with the retention enforced by `jaeger-es-index-cleaner`.
+`max_span_age` and `max_trace_duration` behave the same way as for Elasticsearch, see [Query Time Range](./elasticsearch.mdx#query-time-range).
 
-:::warning
-Because Alauda Distributed Tracing stores OpenSearch data in daily time-based indices, the `max_trace_duration` default of `24h` (raised from a hardcoded ±1h in Jaeger v2.20.0) always adds one extra daily index on each side of the requested time range. If your traces are short-lived, lower `max_trace_duration` to reduce the number of indices scanned per query.
+Alauda Distributed Tracing uses alias-based rotation (`rotation.auto_rollover`) on OpenSearch, so `max_span_age` is silently replaced with 50 years and retention is governed by the ISM policy alone. Only `max_trace_duration` is worth tuning: set it to the longest trace you expect, because the default of `24h` widens every query by a full day on each side.
+
+## Index Management Strategies \{#index-management-strategies}
+
+Jaeger offers the same three rotation strategies on OpenSearch as on Elasticsearch, selected with the `rotation` configuration under `indices.<type>`. See [Index Management Strategies](./elasticsearch.mdx#index-management-strategies) for the comparison table and the field reference. The only backend-specific difference is that lifecycle management is provided by the OpenSearch Index State Management (ISM) plugin instead of Elasticsearch ILM.
+
+Alauda Distributed Tracing configures `rotation.auto_rollover` on all four index types and lets an ISM policy drive rollover and deletion.
+
+## Index Rollover \{#index-rollover}
+
+`jaeger-es-rollover init` prepares OpenSearch exactly as it prepares Elasticsearch: it creates the index templates, the first numbered index of each type (for example `jaeger-span-000001`), and the read and write aliases. See [Index Rollover](./elasticsearch.mdx#index-rollover) for the general description and the rollover trigger conditions.
+
+The tool detects the backend from the ping endpoint and switches the lifecycle-specific parts:
+
+| | Elasticsearch | OpenSearch |
+|---|---------------|------------|
+| Lifecycle plugin | ILM | ISM |
+| Policy API | `_ilm/policy/<name>` | `_plugins/_ism/policies/<name>` |
+| Rollover alias in the index template | `index.lifecycle.rollover_alias` | `index.plugins.index_state_management.rollover_alias` |
+| How a policy is attached to an index | `index.lifecycle.name`, written into the index template | `ism_template` patterns, declared inside the policy |
+
+The `jaeger-es-rollover` image address is published by the Alauda Build of Jaeger v2 cluster plugin in the `jaeger-cluster-plugin-manifest` ConfigMap, so that it always matches the deployed Jaeger version:
+
+```bash
+export JAEGER_ES_ROLLOVER_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest -o jsonpath='{.data.jaeger-es-rollover-image}')
+```
+
+## ISM Support \{#ism-support}
+
+[OpenSearch ISM](https://docs.opensearch.org/latest/im-plugin/ism/index/) automatically manages indices according to a policy made of states and transitions. It fills the same role as Elasticsearch ILM: rolling the write index over by age or size, and deleting indices once they exceed the retention period.
+
+Jaeger never creates a lifecycle policy. `jaeger-es-rollover init` only verifies that the policy named by `ES_ILM_POLICY_NAME` exists, and fails with `ILM/ISM policy <name> doesn't exist. Please create it and re-run init` when it does not. **Create the ISM policy before running the initialization.**
+
+**To enable ISM support**:
+
+1. Create an ISM policy in OpenSearch, for example named `jaeger-ism-policy`. `description` is mandatory, and the policy must carry an `ism_template` section, because OpenSearch attaches policies by matching the index name at creation time rather than through a template setting:
+
+    ```json
+    {
+      "policy": {
+        "description": "Jaeger index rollover and retention",
+        "default_state": "hot",
+        "states": [
+          {
+            "name": "hot",
+            "actions": [ { "rollover": { "min_index_age": "1d", "min_primary_shard_size": "50gb" } } ],
+            "transitions": [ { "state_name": "delete", "conditions": { "min_index_age": "7d" } } ]
+          },
+          { "name": "delete", "actions": [ { "delete": {} } ], "transitions": [] }
+        ],
+        "ism_template": [
+          { "index_patterns": ["jaeger-span-0*"], "priority": 100 }
+        ]
+      }
+    }
+    ```
+
+    :::warning
+    Restrict the `ism_template` patterns to the numbered rollover indices with a `-0*` suffix. A pattern such as `jaeger-span-*` also matches date-suffixed indices created afterwards, for example after a rollback to `rotation.periodic`. ISM then takes those indices over and fails on them, because they are not attached to a rollover alias.
+    :::
+
+    A complete policy covering all four index types is shown in [Installing Alauda Distributed Tracing with OpenSearch](../../installing/installing-distributed-tracing-opensearch.mdx#deploying-the-alauda-build-of-jaeger-v2).
+
+2. Run the initializer with `ES_USE_ILM=true` and `ES_ILM_POLICY_NAME` set to the policy name. These variables keep their `ES_` prefix on OpenSearch:
+
+    ```bash
+    nerdctl run -it --rm --net=host \
+      -e ES_USE_ILM=true \
+      -e ES_ILM_POLICY_NAME=jaeger-ism-policy \
+      -e ADAPTIVE_SAMPLING=true \
+      ${JAEGER_ES_ROLLOVER_IMAGE} \
+      init https://localhost:9200
+    ```
+
+    In addition to the templates, seed indices, and aliases described in [Index Rollover](#index-rollover), the initializer:
+
+    - Validates that the ISM policy exists, through the `_plugins/_ism/policies/` endpoint.
+    - Embeds `index.plugins.index_state_management.rollover_alias` in the index templates.
+    - Sets `is_write_index: true` on the write aliases, which ISM requires in order to roll an index over.
+
+    `ADAPTIVE_SAMPLING=true` additionally creates the `sampling` aliases. Set it whenever the Jaeger configuration declares a rotation strategy for the `sampling` index type, otherwise writes to that index fail because its write alias does not exist.
+
+3. Deploy Jaeger with `create_mappings: false` and the `auto_rollover` rotation strategy on each index type:
+
+    ```yaml
+    create_mappings: false
+    indices:
+      spans:
+        rotation:
+          auto_rollover: {}
+      services:
+        rotation:
+          auto_rollover: {}
+      dependencies:
+        rotation:
+          auto_rollover: {}
+      sampling:
+        rotation:
+          auto_rollover: {}
+    ```
+
+    Leave `auto_rollover.policy_name` empty. It only embeds a policy name into templates that Jaeger creates itself, which OpenSearch does not read.
+
+    :::warning
+    `create_mappings: false` is mandatory here, and no configuration validation enforces it. With the default `create_mappings: true`, Jaeger recreates the index templates at startup under the same names and drops both the read alias and the ISM rollover alias. Writes keep succeeding, so the deployment looks healthy until the first rollover produces an index that the read alias does not cover and that ISM can no longer roll over: new traces are stored but never appear in the Jaeger UI. Recover by setting `create_mappings: false`, re-running `jaeger-es-rollover init`, and repairing the affected indices manually.
+    :::
+
+Once ISM manages the indices, rollover and retention are automatic, and no `rollover`, `lookback`, or `index-cleaner` cron job is required.
+
+### Updating an ISM Policy \{#updating-an-ism-policy}
+
+Changing the retention or the rollover conditions of a running deployment takes two steps.
+
+1. OpenSearch rejects a `PUT` on an existing policy with a `version_conflict_engine_exception` unless the request carries the current sequence number, so read the policy first and pass the values back:
+
+    ```bash
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X PUT \
+      "${OPENSEARCH_ENDPOINT}/_plugins/_ism/policies/jaeger-ism-policy?if_seq_no=<seq-no>&if_primary_term=<primary-term>" \
+      -H 'Content-Type: application/json' --data-binary @policy.json
+    ```
+
+    `<seq-no>` and `<primary-term>` are the `_seq_no` and `_primary_term` values returned by `GET _plugins/_ism/policies/jaeger-ism-policy`.
+
+2. ISM copies the policy into each index when it takes that index over, so a new definition applies only to indices created afterwards. Apply it to the existing indices explicitly, with one request per index type:
+
+    ```bash
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X POST \
+      "${OPENSEARCH_ENDPOINT}/_plugins/_ism/change_policy/${JAEGER_ES_INDEX_PREFIX}-jaeger-span-0*" \
+      -H 'Content-Type: application/json' \
+      -d '{"policy_id": "jaeger-ism-policy"}'
+    ```
+
+    Keep the pattern anchored on a single index type. A wildcard in the middle, such as `-jaeger-*-0*`, also matches date-suffixed indices and makes the request report failures.
+
+:::note
+`_plugins/_ism/explain` is eventually consistent: after a policy change, and after an index is created, it can report `policy_id: null` for several minutes. The background sweep that discovers new indices runs every `plugins.index_state_management.coordinator.sweep_period` (10 minutes by default), and each managed index is then evaluated every `plugins.index_state_management.job_interval` (5 minutes by default), with jitter. Avoid minute-scale conditions when testing a policy.
 :::
-
-## Index management \{#index-management}
-
-The `jaeger-es-rollover` tooling and Index Lifecycle Management (ILM) are specific to Elasticsearch and are not used with OpenSearch. OpenSearch uses the Index State Management (ISM) plugin rather than ILM, and the `jaeger-es-rollover init` command calls the Elasticsearch `_ilm/policy/...` endpoint, which is not compatible with the OpenSearch `_plugins/_ism/policies/...` API.
-
-For OpenSearch, Alauda Distributed Tracing uses daily time-based indices together with the `jaeger-es-index-cleaner` to enforce retention. The cleaner periodically deletes date-suffixed indices (`<prefix>-jaeger-(span|service|dependencies|sampling)-YYYY-MM-DD`) that are older than the configured retention period, without relying on rollover aliases.
 
 For deployment steps, see [Installing Alauda Distributed Tracing with OpenSearch](../../installing/installing-distributed-tracing-opensearch.mdx).

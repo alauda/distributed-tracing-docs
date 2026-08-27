@@ -16,7 +16,7 @@ Only the features documented on this site are supported. Undocumented features a
 
 - **Multi-protocol ingestion**: Accepts trace data from multiple protocols and formats, including OTLP (gRPC and HTTP), Jaeger (gRPC and Thrift), Zipkin (v1 and v2), and Kafka.
 
-- **[Storage backend](../../configuration/storage-backends/)**: Elasticsearch 8.x and OpenSearch 3.x are the supported storage backends. Elasticsearch uses index rollover with aliases and Index Lifecycle Management (ILM) for automatic retention and rotation, while OpenSearch uses daily time-based indices with the `jaeger-es-index-cleaner` for retention.
+- **[Storage backend](../../configuration/storage-backends/)**: Elasticsearch 8.x and OpenSearch 3.x are the supported storage backends. Both use index rollover with aliases for automatic rotation and retention, driven by an Index Lifecycle Management (ILM) policy on Elasticsearch and by an Index State Management (ISM) policy on OpenSearch.
 
 - **Sampling strategies**: Supports head-based sampling with centralized remote configuration (both static and adaptive) and tail-based sampling for making sampling decisions after traces are complete.
 

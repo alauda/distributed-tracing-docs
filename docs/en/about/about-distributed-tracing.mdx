@@ -46,8 +46,8 @@ The main components are:
 
 - **Alauda Distributed Tracing (Jaeger)**: This component is based on Jaeger v2 and provides the tracing backend.
     - **Jaeger Binary**. The main runtime is built on the OpenTelemetry Collector framework and can run role-specific deployments such as `collector` and `query` to receive, store, search, and visualize trace data.
-    - **Jaeger ES Rollover**: This component manages Elasticsearch rollover resources such as templates, aliases, and index rotation so long-running clusters can retain tracing data efficiently.
-    - **jaeger-es-index-cleaner**: This component periodically deletes time-based indices that are older than a configured retention period. It is used with OpenSearch deployments (and with Elasticsearch deployments that do not use ILM) to enforce trace data retention.
+    - **Jaeger ES Rollover**: This component manages rollover resources such as templates, aliases, and index rotation on Elasticsearch and OpenSearch, so long-running clusters can retain tracing data efficiently.
+    - **jaeger-es-index-cleaner**: This component periodically deletes time-based indices that are older than a configured retention period. It is used by deployments that store traces in date-suffixed indices instead of rollover aliases, and is not required when a lifecycle policy governs retention.
 - **<ExternalSiteLink name="opentelemetry" href="/" children="Alauda Build of OpenTelemetry v2" />**: This component is based on the open source OpenTelemetry project and provides a supported distribution for receiving, processing, and exporting telemetry data.
     - **OpenTelemetry Operator**: The Operator deploys and manages Jaeger instances on the cluster and reconciles the resources required for tracing pipelines.
     - **OpenTelemetry Collector**: The Collector is a vendor-neutral component that can be placed in front of Jaeger to receive telemetry, enrich or transform it, and forward it to one or more backends. It is also a common destination for instrumentation libraries that export telemetry data by using open standards such as OTLP.
