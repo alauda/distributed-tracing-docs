@@ -116,7 +116,7 @@ The Operator is subscribed with the `Manual` approval strategy, so the upgrade m
 
 Choose one of the following methods:
 
-- **Batch upgrade**: navigate to **Platform Management** > **Cluster Management** > **Clusters** > *cluster* > **Features**, and upgrade **Alauda Build of OpenTelemetry v2**.
+- **Batch upgrade**: navigate to **Platform Management** > **Cluster Management** > **Clusters** > *cluster* > **Functional Components**, and upgrade **Alauda Build of OpenTelemetry v2**.
 - **Individual upgrade**: navigate to **Administrator** > **Marketplace** > **OperatorHub**, open **Alauda Build of OpenTelemetry v2**, and approve the pending upgrade request.
 
 ### Upgrading via the CLI
@@ -358,7 +358,7 @@ The initialization is idempotent: it overwrites the index templates, and skips i
 
     <Callouts>
       1. The legacy rotation flags are rejected since Jaeger v2.20.0 and must be removed.
-      2. `max_trace_duration` widens the query time range on both sides so that spans extending beyond the search window are still found. The default changed from a hardcoded 1h to a configurable 24h, which widens every query. See [Query Time Range](../configuration/storage-backends/elasticsearch.mdx#query-time-range).
+      2. `max_trace_duration` widens the query time range on both sides so that spans extending beyond the search window are still found. See [Query Time Range](../configuration/storage-backends/elasticsearch.mdx#query-time-range).
       3. `rotation.auto_rollover` replaces `use_aliases` and `use_ilm`. Its default alias names match the aliases created by the `jaeger-es-rollover` initialization, so no data, alias, or ILM policy has to change. Leave `auto_rollover.policy_name` empty, because the ILM policy reference is already embedded in the index templates. See [Index Management Strategies](../configuration/storage-backends/elasticsearch.mdx#index-management-strategies).
       4. The Operator parses `service.telemetry.resource` as a flat map of strings and silently discards the whole `service.telemetry` section if it is not. Jaeger already reports its own `service.name` and `service.version`, so the block is removed rather than migrated.
       5. As for the `otel` Collector, the `without_*` settings now default to `true` and are dropped by replacing the `readers` list.
@@ -403,10 +403,6 @@ The initialization is idempotent: it overwrites the index templates, and skips i
 
     kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector -n ${JAEGER_NS} --timeout=300s
     ```
-
-:::warning
-Leaving `add_metric_suffixes: false` in place renames the generated metrics to `traces_span_metrics_calls_total` and breaks the **Monitor** tab, because the option is silently ignored since Jaeger v2.20.0. Between the two patches, Jaeger runs v2.20.0 while the deprecated option is still in place, so the **Monitor** tab reports no data until this patch is applied.
-:::
 
 :::note
 This rename applies to the Jaeger distribution. A standalone OpenTelemetry Collector only registers `span_metrics` from Collector 0.152.0 onwards, so verify the Collector version before renaming the connector in a front Collector configuration.
