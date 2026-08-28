@@ -37,48 +37,9 @@ _in_otel_repo() {
     return $rc
 }
 
-# 清理上一次测试遗留的 ISM policy。
-# 文档给出的是全新安装场景的 PUT；OpenSearch 对已存在的 policy 直接 PUT 会返回
-# version_conflict_engine_exception（409，需带 if_seq_no/if_primary_term），
-# 因此重复执行前先删掉同名 policy，把环境还原成全新安装的形态。
-_reset_ism_policy() {
-    local code
-    code=$(curl -k -sS -o /dev/null -w '%{http_code}' \
-        -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
-        -X DELETE "${OPENSEARCH_ENDPOINT}/_plugins/_ism/policies/jaeger-ism-policy" 2>/dev/null || true)
-    case "$code" in
-        200) log_info "已删除遗留的 ISM policy jaeger-ism-policy" ;;
-        404) log_info "ISM policy jaeger-ism-policy 不存在，无需清理" ;;
-        *)   log_warn "删除 ISM policy 返回 HTTP ${code}，继续执行" ;;
-    esac
-    return 0
-}
-
-# 校验 ISM 是否已接管 span 写索引。
-# ISM 靠后台 sweep 发现新索引（coordinator.sweep_period 默认 10 分钟，评估再叠加
-# job_interval 5 分钟与 jitter），因此这里最多等 TRACING_ISM_ATTACH_RETRIES × 间隔；
-# 超时只告警不失败——此时 init 建出的模板/别名已在上一步断言过，ISM 调度延迟不应判红。
-_verify_ism_attached() {
-    local write_index
-    write_index=$(curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
-        "${OPENSEARCH_ENDPOINT}/_cat/aliases/${JAEGER_ES_INDEX_PREFIX}-jaeger-span-write?h=index,is_write_index" \
-        2>/dev/null | awk '$2=="true"{print $1}' | head -n1)
-    if [ -z "$write_index" ]; then
-        log_error "未找到 ${JAEGER_ES_INDEX_PREFIX}-jaeger-span-write 的写索引"
-        return 1
-    fi
-    log_info "span 写索引: ${write_index}"
-
-    if retry_command "curl -k -sS -u '${OPENSEARCH_USER}:${OPENSEARCH_PASS}' \
-            '${OPENSEARCH_ENDPOINT}/_plugins/_ism/explain/${write_index}' \
-            | grep -q '\"policy_id\":\"jaeger-ism-policy\"'" \
-            "${TRACING_ISM_ATTACH_RETRIES:-15}" "${TRACING_ISM_ATTACH_INTERVAL:-60}"; then
-        log_success "ISM policy jaeger-ism-policy 已接管 ${write_index}"
-    else
-        log_warn "等待超时：${write_index} 仍未挂载 ISM policy（ISM sweep 延迟或 ism_template 不匹配），请人工复核"
-    fi
-    return 0
-}
+# ISM policy 的两个辅助函数（清理遗留 policy、等待 ISM 接管写索引）已抽到
+# docs-runme-tests/projects/tracing/opensearch.sh，与 OpenSearch 升级文档测试共用：
+#   tracing_reset_ism_policy / tracing_verify_ism_attached
 
 # 部署 telemetrygen 生成测试 trace。
 # 取出文档代码块后按需改写再执行（镜像替换与测试时长两处改动合并于此函数）：
@@ -271,7 +232,7 @@ test_installing_distributed_tracing_opensearch() {
     # OpenSearch 靠 policy 自带的 ism_template 匹配新建索引来挂载，没有 ES 那种
     # 索引模板里的 index.lifecycle.name）
     log_info "步骤 7: 创建 ISM Policy"
-    _reset_ism_policy
+    tracing_reset_ism_policy
     runme run install-tracing-opensearch:create-ism-policy || {
         log_error "创建 ISM Policy 失败"
         return 1
@@ -304,7 +265,7 @@ test_installing_distributed_tracing_opensearch() {
         log_error "查询 ISM explain 失败"
         return 1
     }
-    _verify_ism_attached || return 1
+    tracing_verify_ism_attached || return 1
 
     # 步骤 9: 清理 rollover-init Job
     log_info "步骤 9: 清理 rollover-init Job"

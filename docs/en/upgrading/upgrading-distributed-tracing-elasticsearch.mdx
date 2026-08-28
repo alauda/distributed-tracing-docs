@@ -156,6 +156,10 @@ The Operator upgrade restarts the managed collectors. The `otel` Collector does 
 
 ## Updating the OpenTelemetry Collector \{#updating-the-opentelemetry-collector}
 
+:::note
+The Operator reissues its admission webhook certificate during the upgrade. A patch applied in that window is rejected with `failed calling webhook "mopentelemetrycollectorbeta.kb.io": ... x509: certificate signed by unknown authority`. Wait a few seconds and apply it again.
+:::
+
 **Procedure**
 
 1. Create a file named `otel-upgrade-patch.yaml` with the following content:
