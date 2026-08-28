@@ -12,7 +12,7 @@ Uninstalling the Alauda Distributed Tracing involves deleting the following comp
 - Jaeger v2 (`jaeger`) instance
 - Jaeger namespace
 
-Optionally, you can also uninstall the Alauda Build of OpenTelemetry v2 Operator if it is no longer needed.
+Optionally, you can also uninstall the Alauda Build of OpenTelemetry v2 Operator and the Alauda Build of Jaeger v2 cluster plugin if they are no longer needed.
 
 ## Uninstalling via the web console
 
@@ -67,6 +67,17 @@ In the **Alauda Build of OpenTelemetry v2** view of **OperatorHub**:
 3. Click **Uninstall**.
 
 For more details, see <ExternalSiteLink name="opentelemetry" href="/uninstalling/uninstalling-opentelemetry.html" children="Uninstalling Alauda Build of OpenTelemetry v2" />.
+
+### (Optional) Uninstall the Alauda Build of Jaeger v2 Cluster Plugin
+
+:::warning
+The cluster plugin provides the container images used by every Alauda Distributed Tracing component on the target cluster. Uninstall it only after all Jaeger v2 and OpenTelemetry Collector instances on that cluster have been removed.
+:::
+
+1. In the platform management view, navigate to **Administrator** > **Marketplace** > **Cluster Plugins**.
+2. Select the cluster where the tracing components were deployed.
+3. Find **Alauda Build of Jaeger v2** and click **Uninstall**.
+4. When prompted, confirm the action.
 
 </Steps>
 
@@ -148,5 +159,47 @@ subscription.operators.coreos.com "opentelemetry-operator2" deleted
 ```
 
 For more details, see <ExternalSiteLink name="opentelemetry" href="/uninstalling/uninstalling-opentelemetry.html" children="Uninstalling Alauda Build of OpenTelemetry v2" />.
+
+### (Optional) Uninstall the Alauda Build of Jaeger v2 Cluster Plugin
+
+:::warning
+The cluster plugin provides the container images used by every Alauda Distributed Tracing component on the target cluster. Uninstall it only after all Jaeger v2 and OpenTelemetry Collector instances on that cluster have been removed.
+:::
+
+Cluster plugins are uninstalled by deleting their `ModuleInfo` resource **in the `global` cluster**, regardless of which cluster the plugin targets.
+
+1. Run the following command in the `global` cluster to list the installed plugin. The `CLUSTER` column shows which cluster each entry targets:
+
+    ```bash {name=uninstall-tracing:list-jaeger-plugin-moduleinfo}
+    kubectl get moduleinfo -l cpaas.io/module-name=jaeger-cluster-plugin
+    ```
+
+2. Delete the `ModuleInfo` of the target cluster in the `global` cluster. Replace `<target-cluster>` with the name of the cluster where the tracing components were deployed:
+
+    ```bash {name=uninstall-tracing:delete-jaeger-plugin-moduleinfo}
+    kubectl delete moduleinfo -l cpaas.io/module-name=jaeger-cluster-plugin,cpaas.io/cluster-name=<target-cluster>
+    ```
+
+    **Example output**
+
+    ```text {name=uninstall-tracing:delete-jaeger-plugin-moduleinfo-output}
+    moduleinfo.cluster.alauda.io "<moduleinfo-name>" deleted
+    ```
+
+    :::note
+    Select the resource by label rather than by name: the platform renames the `ModuleInfo` after installation, so its name no longer matches the one used during installation.
+    :::
+
+3. Verify that the ConfigMap created by the plugin has been removed (run against the target cluster):
+
+    ```bash {name=uninstall-tracing:verify-jaeger-plugin-configmap-deleted}
+    kubectl get configmap jaeger-cluster-plugin-manifest -n cpaas-system
+    ```
+
+    **Example output**
+
+    ```text {name=uninstall-tracing:verify-jaeger-plugin-configmap-deleted-output}
+    Error from server (NotFound): configmaps "jaeger-cluster-plugin-manifest" not found
+    ```
 
 </Steps>
