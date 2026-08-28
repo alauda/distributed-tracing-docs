@@ -34,7 +34,7 @@ _upgrade_es_index_templates() {
     kubectl delete job jaeger-es-rollover-init -n "${JAEGER_NS}" --ignore-not-found >/dev/null 2>&1 || true
 
     log_info "用新镜像重跑 rollover init (${RUNME_PREFIX}:rerun-rollover-init)"
-    runme run "${RUNME_PREFIX}:rerun-rollover-init" || {
+    _upgrade_run_block "${RUNME_PREFIX}:rerun-rollover-init" || {
         log_error "重跑 jaeger-es-rollover init 失败"
         return 1
     }
@@ -43,7 +43,7 @@ _upgrade_es_index_templates() {
     # 故这里的返回码本身就是断言，不需要额外比对（模式 A）。
     log_info "确认 span 索引模板已含 scopeTags (${RUNME_PREFIX}:verify-index-template)"
     local output
-    output=$(runme run "${RUNME_PREFIX}:verify-index-template" 2>&1) || {
+    output=$(_upgrade_run_block "${RUNME_PREFIX}:verify-index-template" 2>&1) || {
         log_error "span 索引模板中未找到 scopeTags，模板未按新版本更新"
         log_error "输出: $output"
         return 1
@@ -64,7 +64,7 @@ _upgrade_es_index_templates() {
 #       覆盖掉 init 刚写好的索引模板。
 _upgrade_es_jaeger() {
     log_info "更新 OAuth2 Proxy sidecar 镜像 (${RUNME_PREFIX}:patch-oauth2-proxy-image)"
-    if ! retry_command "runme run ${RUNME_PREFIX}:patch-oauth2-proxy-image" \
+    if ! retry_command "_upgrade_run_block ${RUNME_PREFIX}:patch-oauth2-proxy-image" \
             "$UPGRADE_PATCH_RETRIES" "$UPGRADE_PATCH_INTERVAL"; then
         log_error "更新 OAuth2 Proxy sidecar 镜像失败"
         return 1
@@ -72,6 +72,7 @@ _upgrade_es_jaeger() {
 
     _upgrade_apply_patch "${RUNME_PREFIX}:jaeger-upgrade-patch-yaml" \
         "${RUNME_PREFIX}:apply-jaeger-patch" "jaeger-upgrade-patch.yaml" || return 1
+    _upgrade_assert_jaeger_image || return 1
 
     log_success "Alauda Build of Jaeger v2 升级通过"
     return 0

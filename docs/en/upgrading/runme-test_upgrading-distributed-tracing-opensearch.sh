@@ -37,7 +37,7 @@ RUNME_PREFIX_SPM="upgrade-tracing-opensearch-spm"
 _upgrade_os_migrate_to_ism() {
     log_info "创建 ISM policy (${RUNME_PREFIX}:create-ism-policy)"
     tracing_reset_ism_policy
-    runme run "${RUNME_PREFIX}:create-ism-policy" || {
+    _upgrade_run_block "${RUNME_PREFIX}:create-ism-policy" || {
         log_error "创建 ISM policy 失败"
         return 1
     }
@@ -46,7 +46,7 @@ _upgrade_os_migrate_to_ism() {
     kubectl delete job jaeger-es-rollover-init -n "${JAEGER_NS}" --ignore-not-found >/dev/null 2>&1 || true
 
     log_info "运行 jaeger-es-rollover init (${RUNME_PREFIX}:run-rollover-init)"
-    runme run "${RUNME_PREFIX}:run-rollover-init" || {
+    _upgrade_run_block "${RUNME_PREFIX}:run-rollover-init" || {
         log_error "运行 jaeger-es-rollover init 失败"
         return 1
     }
@@ -56,7 +56,7 @@ _upgrade_os_migrate_to_ism() {
     # （纯采集场景下这两类从未产生过日期索引，文档已注明这是预期结果）。
     log_info "把历史日期索引挂进 read alias (${RUNME_PREFIX}:attach-existing-indices)"
     local output
-    output=$(runme run "${RUNME_PREFIX}:attach-existing-indices" 2>&1) || {
+    output=$(_upgrade_run_block "${RUNME_PREFIX}:attach-existing-indices" 2>&1) || {
         log_error "挂载历史日期索引失败"
         log_error "输出: $output"
         return 1
@@ -79,9 +79,10 @@ _upgrade_os_migrate_to_ism() {
 _upgrade_os_jaeger() {
     _upgrade_apply_patch "${RUNME_PREFIX}:jaeger-upgrade-patch-yaml" \
         "${RUNME_PREFIX}:apply-jaeger-patch" "jaeger-upgrade-patch.yaml" || return 1
+    _upgrade_assert_jaeger_image || return 1
 
     log_info "更新 OAuth2 Proxy sidecar 镜像 (${RUNME_PREFIX}:patch-oauth2-proxy-image)"
-    if ! retry_command "runme run ${RUNME_PREFIX}:patch-oauth2-proxy-image" \
+    if ! retry_command "_upgrade_run_block ${RUNME_PREFIX}:patch-oauth2-proxy-image" \
             "$UPGRADE_PATCH_RETRIES" "$UPGRADE_PATCH_INTERVAL"; then
         log_error "更新 OAuth2 Proxy sidecar 镜像失败"
         return 1
@@ -99,7 +100,7 @@ _upgrade_os_jaeger() {
 _upgrade_os_retire_index_cleaner() {
     log_info "查看剩余的日期索引 (${RUNME_PREFIX}:list-date-indices)"
     local output
-    output=$(runme run "${RUNME_PREFIX}:list-date-indices" 2>&1) || {
+    output=$(_upgrade_run_block "${RUNME_PREFIX}:list-date-indices" 2>&1) || {
         log_error "查询日期索引失败"
         log_error "输出: $output"
         return 1
@@ -108,7 +109,7 @@ _upgrade_os_retire_index_cleaner() {
 
     log_info "删除 index-cleaner CronJob (${RUNME_PREFIX}:delete-index-cleaner)"
     local rc=0
-    output=$(runme run "${RUNME_PREFIX}:delete-index-cleaner" 2>&1) || rc=$?
+    output=$(_upgrade_run_block "${RUNME_PREFIX}:delete-index-cleaner" 2>&1) || rc=$?
     echo "$output"
     if [ "$rc" != "0" ]; then
         # 重跑场景下 CronJob 已被上一次执行删掉，NotFound 不算失败
@@ -135,7 +136,7 @@ _upgrade_os_retire_index_cleaner() {
 _upgrade_os_verify_storage() {
     log_info "确认索引模板仍带 read alias 与 rollover_alias (${RUNME_PREFIX}:verify-index-template)"
     local output
-    output=$(runme run "${RUNME_PREFIX}:verify-index-template" 2>&1) || {
+    output=$(_upgrade_run_block "${RUNME_PREFIX}:verify-index-template" 2>&1) || {
         log_error "span 索引模板中未找到 rollover_alias / read alias——模板已被 Jaeger 覆盖"
         log_error "输出: $output"
         return 1
@@ -144,7 +145,7 @@ _upgrade_os_verify_storage() {
     log_success "索引模板守卫通过"
 
     log_info "确认写入落到编号索引 (${RUNME_PREFIX}:verify-write-target)"
-    output=$(runme run "${RUNME_PREFIX}:verify-write-target" 2>&1) || {
+    output=$(_upgrade_run_block "${RUNME_PREFIX}:verify-write-target" 2>&1) || {
         log_error "查询写索引与别名失败"
         log_error "输出: $output"
         return 1
@@ -152,7 +153,7 @@ _upgrade_os_verify_storage() {
     echo "$output"
 
     log_info "确认 ISM 已接管编号索引 (${RUNME_PREFIX}:verify-ism-attached)"
-    output=$(runme run "${RUNME_PREFIX}:verify-ism-attached" 2>&1) || {
+    output=$(_upgrade_run_block "${RUNME_PREFIX}:verify-ism-attached" 2>&1) || {
         log_error "查询 ISM explain 失败"
         log_error "输出: $output"
         return 1

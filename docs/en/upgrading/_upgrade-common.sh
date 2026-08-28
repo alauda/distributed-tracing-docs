@@ -26,6 +26,10 @@ UPGRADE_CSV_INTERVAL="${UPGRADE_CSV_INTERVAL:-10}"
 # patch CR 会报 `x509: certificate signed by unknown authority`（两篇文档均有 note）
 UPGRADE_PATCH_RETRIES="${UPGRADE_PATCH_RETRIES:-10}"
 UPGRADE_PATCH_INTERVAL="${UPGRADE_PATCH_INTERVAL:-15}"
+# 收尾验证等待组件就绪的轮询次数与间隔。kubectl rollout status 返回后，上一个
+# ReplicaSet 的 Pod 还会在 kubectl get pods 里挂一小会儿，需要给回收留出时间
+UPGRADE_VERIFY_RETRIES="${UPGRADE_VERIFY_RETRIES:-12}"
+UPGRADE_VERIFY_INTERVAL="${UPGRADE_VERIFY_INTERVAL:-10}"
 
 # ── 门槛检测 ──────────────────────────────────────────────────────────────────
 
@@ -95,6 +99,41 @@ _upgrade_precheck() {
 
     log_success "门槛检查通过：${ns}/${instance} 为 ${storage_key} 的 v2.0 部署（含 ${legacy_desc}）"
     return 0
+}
+
+# ── 代码块执行器 ──────────────────────────────────────────────────────────────
+
+# 执行一个文档代码块，**首条失败的命令即中断**。
+#
+# 为什么不用 runme run / kubectl_apply_runme_block：两者都只回传代码块里**最后一条**
+# 命令的返回码。升级文档里「kubectl patch + kubectl rollout status」这种两条命令的块，
+# 前一条失败、后一条成功时整块返回 0，失败被静默吞掉。2026-08-28 实测撞上过：
+# Operator 升级后的 webhook 证书轮换窗口让 apply-jaeger-patch 的 kubectl patch 报
+# x509，而紧随其后的 rollout status 对未变更的 Deployment 照样成功，于是测试判定
+# 「升级通过」——实际镜像与配置一个都没改，直到后面的 SPM patch 把 2.16 的 collector
+# 打崩（`'connectors' unknown type: "span_metrics"`）才暴露。
+#
+# 也不能用 `( set -e; eval "$content" )`：实测 errexit 对 eval 的多行字符串不生效
+# （`( set -e; eval 'false; true' )` 返回 0）。只有起一个 `bash -e` 子进程才可靠。
+# 代码块引用的变量都是 export 出来的，子进程能继承。
+#
+# 用法: _upgrade_run_block <代码块名> [工作目录]
+_upgrade_run_block() {
+    local block="$1" workdir="${2:-}"
+    local content
+    content=$(runme print "$block") || {
+        log_error "获取代码块内容失败: $block"
+        return 1
+    }
+    if [ -z "$content" ]; then
+        log_error "代码块内容为空: $block"
+        return 1
+    fi
+    if [ -n "$workdir" ]; then
+        (cd "$workdir" && bash -ec "$content")
+    else
+        bash -ec "$content"
+    fi
 }
 
 # ── 共同步骤 ──────────────────────────────────────────────────────────────────
@@ -168,13 +207,13 @@ _upgrade_operator() {
     local prefix="$1"
 
     log_info "确认订阅 channel 中的目标版本 (${prefix}:check-operator-versions)"
-    runme run "${prefix}:check-operator-versions" || {
+    _upgrade_run_block "${prefix}:check-operator-versions" || {
         log_error "查询 Operator 可用版本失败"
         return 1
     }
 
     log_info "批准待处理的 InstallPlan (${prefix}:approve-installplan)"
-    runme run "${prefix}:approve-installplan" || {
+    _upgrade_run_block "${prefix}:approve-installplan" || {
         log_error "批准 InstallPlan 失败"
         return 1
     }
@@ -191,15 +230,18 @@ _upgrade_operator() {
 
     # 断言必须落在**同一行**：升级过程中存在「旧 CSV 还是 Succeeded、新 CSV 还在 Installing」
     # 的窗口，用 __cmp_lines 的两个独立关键字会在这个窗口里误判为已完成。
-    # runme run 的输出是 pty 的 CRLF，awk 比对前先去掉 \r。
+    # 去 \r 是防御性的：代码块经 _upgrade_run_block 执行输出为 LF，但改回
+    # runme run（pty，CRLF）时断言不应跟着坏掉。
     log_info "等待 ${expected_csv} 进入 ${expected_phase} (${prefix}:verify-operator-csv)"
     i=0
     while [ "$i" -lt "$UPGRADE_CSV_RETRIES" ]; do
-        csv_output=$(runme run "${prefix}:verify-operator-csv" 2>&1 || true)
+        csv_output=$(_upgrade_run_block "${prefix}:verify-operator-csv" 2>&1 || true)
         if echo "$csv_output" | awk -v csv="$expected_csv" -v phase="$expected_phase" \
                 '{gsub(/\r/, "")} $1 == csv && $NF == phase {found = 1} END {exit !found}'; then
             echo "$csv_output"
             log_success "Operator 升级完成 (${expected_csv} ${expected_phase})"
+            # CSV Succeeded 不代表 webhook 证书已经轮换完，后续 patch 仍会吃 x509
+            _upgrade_wait_webhook_ready || return 1
             return 0
         fi
         i=$((i + 1))
@@ -211,6 +253,58 @@ _upgrade_operator() {
     log_error "期待同一行同时出现: ${expected_csv} 与 ${expected_phase}"
     log_error "实际输出: $csv_output"
     return 1
+}
+
+# 等待 Operator 的 admission webhook 重新可用。
+#
+# Operator 升级会重签 webhook 证书，窗口内 patch CR 会被拒：
+#   failed calling webhook "mopentelemetrycollectorbeta.kb.io": ...
+#   x509: certificate signed by unknown authority
+# 两篇文档都以 note 的形式让读者「等几秒再试」。
+#
+# 顺序很重要：**先等 Operator 自己的 Deployment 滚动完**，再探测 webhook。重签证书的
+# 正是新起来的那个 Operator Pod，CSV 进入 Succeeded 时它往往还没就绪——2026-08-28 的
+# 失败就是这样：CSV Succeeded 后紧接着的 otel patch 成功，几十秒后的 jaeger patch 才
+# 撞上 x509。只探测不等滚动，会探到「窗口还没打开」的假就绪。
+#
+# 探测用一次空的 merge patch 加服务端 dry-run：不改任何字段，但会真正走一遍 webhook。
+#
+# 即便如此也不保证绝对没有窗口（证书可能在 Pod Ready 之后才轮换），所以真正兜底的
+# 仍是每次 patch 自带的 retry_command——本函数只是把常见情况的那次失败省掉。
+_upgrade_wait_webhook_ready() {
+    log_info "等待 Operator Deployment 滚动完成"
+    local deploy
+    for deploy in $(kubectl -n opentelemetry-operator2 get deploy -o name 2>/dev/null); do
+        kubectl -n opentelemetry-operator2 rollout status "$deploy" --timeout=180s >/dev/null 2>&1 || true
+    done
+
+    log_info "探测 admission webhook 是否已可用"
+    if retry_command "kubectl patch opentelemetrycollector '${JAEGER_INSTANCE_NAME}' \
+            -n '${JAEGER_NS}' --type=merge -p '{}' --dry-run=server >/dev/null 2>&1" \
+            "$UPGRADE_PATCH_RETRIES" "$UPGRADE_PATCH_INTERVAL"; then
+        log_success "admission webhook 已就绪"
+        return 0
+    fi
+    log_error "admission webhook 未在预期时间内恢复，后续 patch 会被拒绝"
+    return 1
+}
+
+# 断言 Jaeger 实例的 spec.image 已换成集群插件下发的新镜像。
+#
+# 兜底断言：即便某次改动又让「patch 失败被静默吞掉」重现，也能在紧挨着 patch 的位置
+# 报错，而不是拖到最后由「Pod 不是 Running」这种间接症状暴露。
+_upgrade_assert_jaeger_image() {
+    local actual
+    actual=$(kubectl -n "${JAEGER_NS}" get opentelemetrycollector "${JAEGER_INSTANCE_NAME}" \
+        -o jsonpath='{.spec.image}' 2>/dev/null || echo "")
+    if [ "$actual" != "${JAEGER_IMAGE}" ]; then
+        log_error "Jaeger 实例镜像未更新——升级 patch 未生效"
+        log_error "期待: ${JAEGER_IMAGE}"
+        log_error "实际: ${actual:-<空>}"
+        return 1
+    fi
+    log_success "Jaeger 实例镜像已更新: ${actual}"
+    return 0
 }
 
 # 生成 patch 文件并在 /tmp 下渲染应用（模式 C + 模式 E）。
@@ -227,7 +321,7 @@ _upgrade_apply_patch() {
     }
 
     log_info "渲染并应用 ${filename} (${apply_block})"
-    if ! retry_command "kubectl_apply_runme_block '${apply_block}' '/tmp/'" \
+    if ! retry_command "_upgrade_run_block '${apply_block}' '/tmp/'" \
             "$UPGRADE_PATCH_RETRIES" "$UPGRADE_PATCH_INTERVAL"; then
         log_error "应用 ${filename} 失败"
         return 1
@@ -246,7 +340,7 @@ _upgrade_otel_collector() {
 
     log_info "等待 Collector 重启并确认无弃用告警 (${prefix}:verify-otel-collector)"
     local output
-    output=$(runme run "${prefix}:verify-otel-collector" 2>&1) || {
+    output=$(_upgrade_run_block "${prefix}:verify-otel-collector" 2>&1) || {
         log_error "验证 OpenTelemetry Collector 失败"
         log_error "输出: $output"
         return 1
@@ -313,30 +407,51 @@ _upgrade_verify() {
     local prefix="$1"
 
     log_info "确认组件版本与 Pod 状态 (${prefix}:verify-versions)"
-    local output
-    output=$(runme run "${prefix}:verify-versions" 2>&1) || {
-        log_error "查询组件版本与 Pod 状态失败"
-        log_error "输出: $output"
-        return 1
-    }
-    echo "$output"
     # 代码块输出两段：get opentelemetrycollector 与 get pods。这里逐 Pod 校验状态而不是
     # 用 `+ Running` 这类关键字——后者只要任意一行含 Running 就算过，Jaeger 崩了而 otel
-    # 正常时会误判。Pod 行按 `<实例>-collector-<hash>` 前缀识别（CR 那段的 NAME 无此后缀），
-    # STATUS 是第 3 列；runme run 输出是 CRLF，比对前先去掉 \r。
-    if ! echo "$output" | awk -v jc="${JAEGER_INSTANCE_NAME}-collector-" '
-            {gsub(/\r/, "")}
-            index($1, jc) == 1        { jaeger++; if ($3 != "Running") bad = 1 }
-            index($1, "otel-collector-") == 1 { otel++;   if ($3 != "Running") bad = 1 }
-            END { exit !(jaeger > 0 && otel > 0 && !bad) }'; then
-        log_error "组件状态验证失败（期待 ${JAEGER_INSTANCE_NAME}-collector 与 otel-collector 的 Pod 均为 Running）"
+    # 正常时会误判（实测确实靠这条断言抓到过一次真实故障）。
+    #
+    # 三条细则：
+    #   - Pod 行按 `<实例>-collector-<hash>` 前缀识别，CR 那段的 NAME 没有这个后缀；
+    #   - **跳过 Completed / Terminating 的行**：kubectl rollout status 返回后，上一个
+    #     ReplicaSet 的 Pod 还会在列表里挂十几秒（实测 `0/2 Completed`），把它算进来会
+    #     误判失败。CrashLoopBackOff / Error 不在跳过之列，仍然判失败；
+    #   - 除 STATUS=Running 外还要求 READY 列是 n/n，否则 `1/2 Running` 这种也算过。
+    # 整体再套一层轮询，给滚动更新的收敛留出时间。
+    local output ok=false i=0
+    while [ "$i" -lt "$UPGRADE_VERIFY_RETRIES" ]; do
+        output=$(_upgrade_run_block "${prefix}:verify-versions" 2>&1) || {
+            log_error "查询组件版本与 Pod 状态失败"
+            log_error "输出: $output"
+            return 1
+        }
+        if echo "$output" | awk -v jc="${JAEGER_INSTANCE_NAME}-collector-" '
+                {gsub(/\r/, "")}
+                index($1, jc) == 1 || index($1, "otel-collector-") == 1 {
+                    if ($3 == "Completed" || $3 == "Terminating") next
+                    if (index($1, jc) == 1) jaeger++; else otel++
+                    if ($3 != "Running") bad = 1
+                    split($2, ready, "/")
+                    if (ready[1] == "" || ready[2] == "" || ready[1] != ready[2] || ready[1] == 0) bad = 1
+                }
+                END { exit !(jaeger > 0 && otel > 0 && !bad) }'; then
+            ok=true
+            break
+        fi
+        i=$((i + 1))
+        log_warn "组件尚未全部就绪，等待滚动更新收敛 (${i}/${UPGRADE_VERIFY_RETRIES})"
+        sleep "$UPGRADE_VERIFY_INTERVAL"
+    done
+    echo "$output"
+    if [ "$ok" != "true" ]; then
+        log_error "组件状态验证失败（期待 ${JAEGER_INSTANCE_NAME}-collector 与 otel-collector 的 Pod 均为 Running 且容器全就绪）"
         log_error "实际输出: $output"
         return 1
     fi
     log_success "组件版本与 Pod 状态验证通过"
 
     log_info "确认 Jaeger 启动无告警 (${prefix}:verify-jaeger-logs)"
-    output=$(runme run "${prefix}:verify-jaeger-logs" 2>&1) || {
+    output=$(_upgrade_run_block "${prefix}:verify-jaeger-logs" 2>&1) || {
         log_error "查询 Jaeger 日志失败"
         log_error "输出: $output"
         return 1
