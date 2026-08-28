@@ -151,7 +151,7 @@ Choose one of the following methods:
     ```
 
 :::note
-The Operator upgrade restarts the managed collectors. The `otel` Collector does not pin `spec.image`, so it immediately picks up the Collector version shipped with the new Operator, while the Jaeger instance stays on the image pinned in `spec.image` until step 5. The renamed component types remain available as deprecated aliases, so the Collector keeps running and only logs deprecation warnings until the next step.
+The Operator upgrade restarts the managed collectors. The `otel` Collector does not pin `spec.image`, so it immediately picks up the Collector version shipped with the new Operator, while the Jaeger instance stays on the image pinned in `spec.image` until [step 5](#updating-jaeger). The renamed component types remain available as deprecated aliases, so the Collector keeps running and only logs deprecation warnings until the next step.
 :::
 
 ## Updating the OpenTelemetry Collector \{#updating-the-opentelemetry-collector}
