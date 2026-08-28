@@ -233,6 +233,8 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
               value: "${JAEGER_ES_INDEX_PREFIX}"
             - name: ES_USE_ILM
               value: "true"
+            - name: ADAPTIVE_SAMPLING
+              value: "true"
             - name: ES_TLS_ENABLED
               value: "true"
             - name: ES_TLS_SKIP_HOST_VERIFY

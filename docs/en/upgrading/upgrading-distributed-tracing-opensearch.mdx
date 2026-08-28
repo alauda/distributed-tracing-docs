@@ -1,0 +1,572 @@
+---
+weight: 20
+---
+
+# Upgrading Alauda Distributed Tracing with OpenSearch
+
+Upgrading an OpenSearch-backed deployment from v2.0 (Jaeger 2.16.0, Alauda Build of OpenTelemetry v2 Operator 0.147.0) to v2.1 (Jaeger 2.20.0, Operator 0.157.0) involves the following steps:
+
+1. Installing the Alauda Build of Jaeger v2 cluster plugin
+2. Upgrading the Alauda Build of OpenTelemetry v2 Operator
+3. Updating the OpenTelemetry Collector
+4. Migrating index management to ISM
+5. Updating the Alauda Build of Jaeger v2
+6. Retiring the index cleaner
+
+:::warning
+This upgrade changes the index layout. A v2.0 deployment writes one date-suffixed index per day, such as `<prefix>-jaeger-span-2026-08-27`, and deletes expired indices with the `jaeger-es-index-cleaner` CronJob. A v2.1 deployment writes through a rollover alias into numbered indices, such as `<prefix>-jaeger-span-000001`, and delegates rollover and retention to an OpenSearch ISM policy.
+
+Existing indices are neither renamed nor reindexed, but Jaeger reads them only through the read alias after the switch. [Step 4](#migrating-to-ism) attaches them to that alias, which keeps historical traces queryable.
+:::
+
+**Prerequisites**
+
+- An Alauda Distributed Tracing v2.0 deployment installed as described in [Installing Alauda Distributed Tracing with OpenSearch](../installing/installing-distributed-tracing-opensearch.mdx).
+- The Alauda Build of Jaeger v2 cluster plugin and the Alauda Build of OpenTelemetry v2 Operator 0.157.0 are published to the platform.
+- An active ACP CLI (`kubectl`) session by a cluster administrator with the `cluster-admin` role, for both the target cluster and the `global` cluster.
+- Review the [Upgrade Notes](../about/release-notes/v2-1-0.mdx#upgrade-notes) for the behavior changes introduced by this release.
+
+**Setting environment variables**
+
+Run the following commands against the target cluster. The OpenSearch endpoint, the index prefix, and the credentials are read back from the running deployment so that they always match it:
+
+```bash {name=upgrade-tracing-opensearch:set-vars}
+# Namespace where the tracing components are deployed
+export JAEGER_NS="jaeger-system"
+# Name of the OpenTelemetryCollector resource that runs Jaeger
+export JAEGER_INSTANCE_NAME="jaeger"
+
+export OPENSEARCH_ENDPOINT=$(kubectl -n${JAEGER_NS} get opentelemetrycollector ${JAEGER_INSTANCE_NAME} \
+  -o jsonpath='{.spec.config.extensions.jaeger_storage.backends.opensearch_storage.opensearch.server_urls[0]}')
+export JAEGER_ES_INDEX_PREFIX=$(kubectl -n${JAEGER_NS} get opentelemetrycollector ${JAEGER_INSTANCE_NAME} \
+  -o jsonpath='{.spec.config.extensions.jaeger_storage.backends.opensearch_storage.opensearch.indices.index_prefix}')
+export OPENSEARCH_USER=$(kubectl -n${JAEGER_NS} get secret opensearch-credentials \
+  -o jsonpath='{.data.OPENSEARCH_USER}' | base64 -d)
+export OPENSEARCH_PASS=$(kubectl -n${JAEGER_NS} get secret opensearch-credentials \
+  -o jsonpath='{.data.OPENSEARCH_PASS}' | base64 -d)
+
+# Maximum expected duration of a single trace. Controls how far beyond the search
+# window spans are looked up. The Jaeger default changed from 1h to 24h in v2.20.0.
+export JAEGER_MAX_TRACE_DURATION="1h"
+```
+
+## Installing the Alauda Build of Jaeger v2 Cluster Plugin \{#installing-the-cluster-plugin}
+
+Starting with v2.1, the container images of the tracing components are delivered by the Alauda Build of Jaeger v2 cluster plugin instead of the Operator bundle. Installing the plugin synchronizes the images to the platform's built-in registry and creates the `jaeger-cluster-plugin-manifest` ConfigMap in the `cpaas-system` namespace of the target cluster. The remaining steps read the image addresses from that ConfigMap.
+
+### Installing via the web console
+
+1. In the platform management view, navigate to **Administrator** > **Marketplace** > **Cluster Plugins**.
+2. Select the cluster where the tracing components are deployed.
+3. Find **Alauda Build of Jaeger v2** and click **Install**. The plugin requires no installation parameters.
+
+### Installing via the CLI
+
+Cluster plugins are installed by creating a `ModuleInfo` resource **in the `global` cluster**, regardless of which cluster the plugin targets.
+
+1. Run the following command in the `global` cluster to check the published plugin versions:
+
+    ```bash {name=upgrade-tracing-opensearch:list-jaeger-plugin-versions}
+    kubectl get moduleconfigs -l cpaas.io/module-name=jaeger-cluster-plugin \
+      -o custom-columns=NAME:.metadata.name,VERSION:.spec.version
+    ```
+
+2. Create a `ModuleInfo` resource in the `global` cluster. Replace `<target-cluster>` with the name of the cluster where the tracing components are deployed, and `<plugin-version>` with a version from the previous step:
+
+    ```bash {name=upgrade-tracing-opensearch:create-jaeger-plugin-moduleinfo}
+    kubectl apply -f - <<EOF
+    apiVersion: cluster.alauda.io/v1alpha1
+    kind: ModuleInfo
+    metadata:
+      labels:
+        cpaas.io/cluster-name: <target-cluster>
+        cpaas.io/module-name: jaeger-cluster-plugin
+        cpaas.io/module-type: plugin
+      name: <target-cluster>-jaeger-cluster-plugin
+    spec:
+      config: {}
+      version: <plugin-version>
+    EOF
+    ```
+
+3. Verify the installation in the `global` cluster. The plugin is installed successfully when the `STATUS` column shows `Running`:
+
+    ```bash {name=upgrade-tracing-opensearch:verify-jaeger-plugin-moduleinfo}
+    kubectl get moduleinfo -l cpaas.io/module-name=jaeger-cluster-plugin
+    ```
+
+    :::note
+    The platform assigns the resource a generated name, so query the `ModuleInfo` by label rather than by the name used in the manifest.
+    :::
+
+### Reading the image addresses
+
+Run the following commands against the target cluster. The exported variables are used in the later steps:
+
+```bash {name=upgrade-tracing-opensearch:get-plugin-images}
+export JAEGER_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest -o jsonpath='{.data.jaeger-image}')
+export JAEGER_ES_ROLLOVER_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest -o jsonpath='{.data.jaeger-es-rollover-image}')
+export JOAUTH2_PROXY_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest -o jsonpath='{.data.oauth2-proxy-image}')
+
+echo "${JAEGER_IMAGE}"
+echo "${JAEGER_ES_ROLLOVER_IMAGE}"
+echo "${JOAUTH2_PROXY_IMAGE}"
+```
+
+## Upgrading the Alauda Build of OpenTelemetry v2 Operator \{#upgrading-the-operator}
+
+The Operator is subscribed with the `Manual` approval strategy, so the upgrade must be approved explicitly. For general background on Operator upgrades, see <ExternalSiteLink name="acp" href="/extend/operator.html" children="Operator" />.
+
+### Upgrading via the web console
+
+Choose one of the following methods:
+
+- **Batch upgrade**: navigate to **Platform Management** > **Cluster Management** > **Clusters** > *cluster* > **Functional Components**, and upgrade **Alauda Build of OpenTelemetry v2**.
+- **Individual upgrade**: navigate to **Administrator** > **Marketplace** > **OperatorHub**, open **Alauda Build of OpenTelemetry v2**, and approve the pending upgrade request.
+
+### Upgrading via the CLI
+
+1. Confirm that the target version is available in the subscribed channel:
+
+    ```bash {name=upgrade-tracing-opensearch:check-operator-versions}
+    kubectl -ncpaas-system get packagemanifest opentelemetry-operator2 \
+      -o jsonpath='{range .status.channels[*]}{.name}{"\t"}{.currentCSV}{"\n"}{end}'
+    ```
+
+2. Approve the pending `InstallPlan`:
+
+    ```bash {name=upgrade-tracing-opensearch:approve-installplan}
+    PLAN=$(kubectl -nopentelemetry-operator2 get subscription opentelemetry-operator2 \
+      -o jsonpath='{.status.installPlanRef.name}')
+    kubectl -nopentelemetry-operator2 patch installplan "${PLAN}" \
+      --type=json -p='[{"op": "replace", "path": "/spec/approved", "value": true}]'
+    ```
+
+3. Wait until the new `ClusterServiceVersion` reaches the `Succeeded` phase:
+
+    ```bash {name=upgrade-tracing-opensearch:verify-operator-csv}
+    kubectl -nopentelemetry-operator2 get csv
+    ```
+
+    **Example output**
+
+    ```text {name=upgrade-tracing-opensearch:verify-operator-csv-output}
+    NAME                                  DISPLAY                            VERSION      REPLACES                              PHASE
+    opentelemetry-operator2.v0.157.0-r1   Alauda Build of OpenTelemetry v2   0.157.0-r1   opentelemetry-operator2.v0.147.0-r0   Succeeded
+    ```
+
+:::note
+The Operator upgrade restarts the managed collectors. The `otel` Collector does not pin `spec.image`, so it immediately picks up the Collector version shipped with the new Operator, while the Jaeger instance stays on the image pinned in `spec.image` until [step 5](#updating-jaeger). The renamed component types remain available as deprecated aliases, so the Collector keeps running and only logs deprecation warnings until the next step.
+:::
+
+## Updating the OpenTelemetry Collector \{#updating-the-opentelemetry-collector}
+
+:::note
+The Operator reissues its admission webhook certificate during the upgrade. A patch applied in that window is rejected with `failed calling webhook "mopentelemetrycollectorbeta.kb.io": ... x509: certificate signed by unknown authority`. Wait a few seconds and apply it again.
+:::
+
+**Procedure**
+
+1. Create a file named `otel-upgrade-patch.yaml` with the following content:
+
+    ```yaml title="otel-upgrade-patch.yaml" {name=upgrade-tracing-opensearch:otel-upgrade-patch-yaml}
+    spec:
+      config:
+        exporters:
+          otlp/traces: null # [!code callout]
+          otlp_grpc/traces:
+            endpoint: "${JAEGER_INSTANCE_NAME}-collector.${JAEGER_NS}.svc.cluster.local:4317"
+            tls:
+              insecure: true
+          prometheus:
+            add_metric_suffixes: null # [!code callout]
+            translation_strategy: UnderscoreEscapingWithoutSuffixes
+        service:
+          pipelines:
+            traces:
+              exporters: [debug, otlp_grpc/traces]
+          telemetry:
+            metrics:
+              readers: # [!code callout]
+                - pull:
+                    exporter:
+                      prometheus:
+                        host: 0.0.0.0
+                        port: 8888
+    ```
+
+    <Callouts>
+      1. The `otlp` exporter type is renamed to `otlp_grpc`. Setting the old key to `null` removes it, and the new key recreates the exporter with the same endpoint.
+      2. `add_metric_suffixes` is deprecated and silently ignored. `translation_strategy: UnderscoreEscapingWithoutSuffixes` keeps the metric names free of Prometheus-style suffixes.
+      3. The `without_scope_info`, `without_type_suffix`, and `without_units` settings of the Prometheus reader now default to `true` and are dropped. Because `readers` is a list, the patch replaces it as a whole. The exposed metric names are unchanged.
+    </Callouts>
+
+2. Render the patch with `envsubst` and apply it:
+
+    ```bash {name=upgrade-tracing-opensearch:apply-otel-patch}
+    kubectl patch opentelemetrycollector otel -n ${JAEGER_NS} \
+      --type=merge -p "$(envsubst < otel-upgrade-patch.yaml)"
+    ```
+
+3. Wait for the Collector to restart, and confirm that it starts without deprecation warnings:
+
+    ```bash {name=upgrade-tracing-opensearch:verify-otel-collector}
+    kubectl rollout status deployment/otel-collector -n ${JAEGER_NS} --timeout=180s
+    sleep 3
+    kubectl logs deployment/otel-collector -n ${JAEGER_NS} --tail=200 \
+      | grep -i "deprecated" || echo "No deprecation warnings"
+    ```
+
+### (Optional) Updating the Collector for Service Performance Monitoring \{#updating-the-collector-for-spm}
+
+Rename the `loadbalancing` exporter that routes spans to the Jaeger tier. Apply this patch right after the previous one: in between, spans reach Jaeger through the direct exporter instead of being routed by `service`, which fragments the RED metrics if the Jaeger tier runs with more than one replica.
+
+1. Create a file named `otel-spm-upgrade-patch.yaml` with the following content:
+
+    ```yaml title="otel-spm-upgrade-patch.yaml" {name=upgrade-tracing-opensearch-spm:otel-spm-upgrade-patch-yaml}
+    spec:
+      config:
+        exporters:
+          otlp_grpc/traces: null # not used when spans are routed through load_balancing
+          loadbalancing: null
+          load_balancing:
+            routing_key: service
+            protocol:
+              otlp: # a configuration field of the load_balancing exporter, not a component type name
+                tls:
+                  insecure: true
+            resolver:
+              dns:
+                hostname: ${JAEGER_INSTANCE_NAME}-collector-headless.${JAEGER_NS}.svc.cluster.local
+                port: "4317"
+        service:
+          pipelines:
+            traces:
+              exporters: [debug, load_balancing]
+    ```
+
+2. Render the patch with `envsubst` and apply it:
+
+    ```bash {name=upgrade-tracing-opensearch-spm:apply-otel-patch}
+    kubectl patch opentelemetrycollector otel -n ${JAEGER_NS} \
+      --type=merge -p "$(envsubst < otel-spm-upgrade-patch.yaml)"
+
+    kubectl rollout status deployment/otel-collector -n ${JAEGER_NS} --timeout=180s
+    ```
+
+## Migrating Index Management to ISM \{#migrating-to-ism}
+
+A v2.0 deployment lets Jaeger compute a new index name every day and relies on the `jaeger-es-index-cleaner` CronJob for retention. This step prepares the alias-based layout that replaces it: an [ISM policy](../configuration/storage-backends/opensearch.mdx#ism-support) that rolls over and deletes indices, and the aliases and index templates that Jaeger writes through.
+
+Perform this step before updating the Jaeger configuration. Jaeger writes through the write alias as soon as it is switched over, so the aliases must already exist.
+
+**Procedure**
+
+1. Create the ISM policy. It must exist before the initialization creates the indices, because OpenSearch attaches a policy through the `ism_template` patterns declared in the policy itself:
+
+    ```bash {name=upgrade-tracing-opensearch:create-ism-policy}
+    curl -k -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X PUT \
+      "${OPENSEARCH_ENDPOINT}/_plugins/_ism/policies/jaeger-ism-policy" \
+      -H 'Content-Type: application/json' \
+      --data-binary @- << EOF
+    {
+      "policy": {
+        "description": "Jaeger index rollover and retention",
+        "default_state": "hot",
+        "states": [
+          {
+            "name": "hot",
+            "actions": [
+              {
+                "rollover": {
+                  "min_primary_shard_size": "50gb",
+                  "min_index_age": "1d"
+                }
+              }
+            ],
+            "transitions": [
+              {
+                "state_name": "delete",
+                "conditions": {
+                  "min_index_age": "7d"
+                }
+              }
+            ]
+          },
+          {
+            "name": "delete",
+            "actions": [
+              {
+                "delete": {}
+              }
+            ],
+            "transitions": []
+          }
+        ],
+        "ism_template": [
+          { "index_patterns": ["${JAEGER_ES_INDEX_PREFIX}-jaeger-span-0*"], "priority": 100 },
+          { "index_patterns": ["${JAEGER_ES_INDEX_PREFIX}-jaeger-service-0*"], "priority": 100 },
+          { "index_patterns": ["${JAEGER_ES_INDEX_PREFIX}-jaeger-dependencies-0*"], "priority": 100 },
+          { "index_patterns": ["${JAEGER_ES_INDEX_PREFIX}-jaeger-sampling-0*"], "priority": 100 }
+        ]
+      }
+    }
+    EOF
+    ```
+
+    Set `transitions[0].conditions.min_index_age` to the retention that the `jaeger-es-index-cleaner` CronJob currently applies, so that retention does not change across the upgrade. For the meaning of the other fields, see [ISM Support](../configuration/storage-backends/opensearch.mdx#ism-support).
+
+    :::warning
+    Keep the `-0*` suffix in the `ism_template` patterns. It matches only the numbered rollover indices, such as `-000001`. A broader pattern such as `-*` also matches the date-suffixed indices that this deployment still holds, which ISM cannot roll over.
+    :::
+
+2. Run the `jaeger-es-rollover` initialization with the new image. It creates the index templates, the `-000001` indices, and the read and write aliases:
+
+    ```bash {name=upgrade-tracing-opensearch:run-rollover-init}
+    kubectl apply -n ${JAEGER_NS} -f - <<EOF
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: jaeger-es-rollover-init
+    spec:
+      template:
+        spec:
+          containers:
+          - name: es-rollover-init
+            image: "${JAEGER_ES_ROLLOVER_IMAGE}"
+            args:
+              - init
+              - "${OPENSEARCH_ENDPOINT}"
+            env:
+            - name: INDEX_PREFIX
+              value: "${JAEGER_ES_INDEX_PREFIX}"
+            - name: ES_USE_ILM
+              value: "true"
+            - name: ES_ILM_POLICY_NAME
+              value: "jaeger-ism-policy"
+            - name: ADAPTIVE_SAMPLING
+              value: "true"
+            - name: ES_TLS_ENABLED
+              value: "true"
+            - name: ES_TLS_SKIP_HOST_VERIFY
+              value: "true"
+            - name: ES_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-credentials
+                  key: OPENSEARCH_USER
+            - name: ES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-credentials
+                  key: OPENSEARCH_PASS
+          restartPolicy: Never
+      backoffLimit: 3
+    EOF
+
+    kubectl wait --for=condition=complete job/jaeger-es-rollover-init -n ${JAEGER_NS} --timeout=180s
+    kubectl delete job jaeger-es-rollover-init -n ${JAEGER_NS}
+    ```
+
+    The initialization also updates the index templates, which Jaeger v2.20.0 needs for the additional span fields it writes, such as `scopeTags` and `references.traceState`.
+
+    :::warning
+    Do not restart the Jaeger instance between this step and [step 5](#updating-jaeger). It still runs the v2.0 configuration, in which `create_mappings` defaults to `true`, so on startup it recreates the index templates and drops the read alias and the ISM rollover alias that this step has just written. Writes keep succeeding, so the loss is only noticed at the first rollover. If the instance does restart, re-run this Job afterwards to restore the templates.
+    :::
+
+3. Attach the existing date-suffixed indices to the read alias. After the switch, Jaeger resolves reads through the read alias only, so indices that are not attached become invisible to the Jaeger UI:
+
+    ```bash {name=upgrade-tracing-opensearch:attach-existing-indices}
+    for TYPE in span service dependencies sampling; do
+      curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X POST \
+        "${OPENSEARCH_ENDPOINT}/_aliases" -H 'Content-Type: application/json' \
+        -d "{\"actions\":[{\"add\":{\"index\":\"${JAEGER_ES_INDEX_PREFIX}-jaeger-${TYPE}-2*\",\"alias\":\"${JAEGER_ES_INDEX_PREFIX}-jaeger-${TYPE}-read\"}}]}"
+      echo
+    done
+    ```
+
+    The `-2*` pattern matches the date-suffixed indices, such as `-2026-08-27`, without matching the `-000001` indices that the previous step created. An index type that has never produced a date-suffixed index returns `index_not_found_exception`, which is expected for `dependencies` and `sampling` in most deployments.
+
+    :::note
+    Under alias-based rotation, Jaeger no longer limits queries by `max_span_age`, so trace lookups and the service and operation lists scan every index attached to the read alias. Attach only the indices whose traces you still need. They are removed from the alias automatically when the index cleaner deletes them in [step 6](#retiring-the-index-cleaner).
+    :::
+
+## Updating the Alauda Build of Jaeger v2 \{#updating-jaeger}
+
+**Procedure**
+
+1. Create a file named `jaeger-upgrade-patch.yaml` with the following content:
+
+    ```yaml title="jaeger-upgrade-patch.yaml" {name=upgrade-tracing-opensearch:jaeger-upgrade-patch-yaml}
+    spec:
+      image: "${JAEGER_IMAGE}"
+      config:
+        extensions:
+          jaeger_storage:
+            backends:
+              opensearch_storage:
+                opensearch:
+                  max_span_age: null # [!code callout]
+                  max_trace_duration: "${JAEGER_MAX_TRACE_DURATION}" # [!code callout]
+                  create_mappings: false # [!code callout]
+                  indices:
+                    spans:
+                      date_layout: null # [!code callout]
+                      rollover_frequency: null
+                      rotation: # [!code callout]
+                        auto_rollover: {}
+                    services:
+                      date_layout: null
+                      rollover_frequency: null
+                      rotation:
+                        auto_rollover: {}
+                    dependencies:
+                      date_layout: null
+                      rollover_frequency: null
+                      rotation:
+                        auto_rollover: {}
+                    sampling:
+                      date_layout: null
+                      rollover_frequency: null
+                      rotation:
+                        auto_rollover: {}
+        service:
+          telemetry:
+            resource: null # [!code callout]
+            metrics:
+              level: detailed
+              readers: # [!code callout]
+                - pull:
+                    exporter:
+                      prometheus:
+                        host: 0.0.0.0
+                        port: 8888
+    ```
+
+    <Callouts>
+      1. `max_span_age` no longer takes effect under alias-based rotation, because Jaeger cannot derive an index name from a timestamp. Removing it avoids a setting that looks active but is ignored.
+      2. `max_trace_duration` widens the query time range on both sides so that spans extending beyond the search window are still found. See [Query Time Range](../configuration/storage-backends/opensearch.mdx#query-time-range).
+      3. `create_mappings: false` stops Jaeger from creating its own index templates, which would overwrite the templates written by the initialization and drop the read alias and the ISM rollover alias from them. No validation catches this, and writes keep succeeding until the first rollover, after which new data is no longer readable. See [Index Rollover](../configuration/storage-backends/opensearch.mdx#index-rollover).
+      4. The deprecated `date_layout` and `rollover_frequency` fields must be removed. A merge patch does not remove them implicitly, and combining them with `rotation` fails validation with `cannot use both 'rotation' config and legacy 'date_layout'/'rollover_frequency' fields`.
+      5. `rotation.auto_rollover` selects lifecycle-managed rollover. Its default alias names match the aliases created by the initialization. Leave `auto_rollover.policy_name` empty: on OpenSearch the policy is bound by the `ism_template` patterns, not by name. See [Index Management Strategies](../configuration/storage-backends/opensearch.mdx#index-management-strategies).
+      6. The Operator parses `service.telemetry.resource` as a flat map of strings and silently discards the whole `service.telemetry` section if it is not. Jaeger already reports its own `service.name` and `service.version`, so the block is removed rather than migrated.
+      7. As for the `otel` Collector, the `without_*` settings now default to `true` and are dropped by replacing the `readers` list.
+    </Callouts>
+
+2. Render the patch with `envsubst`, apply it, and wait for Jaeger to restart:
+
+    ```bash {name=upgrade-tracing-opensearch:apply-jaeger-patch}
+    kubectl patch opentelemetrycollector ${JAEGER_INSTANCE_NAME} -n ${JAEGER_NS} \
+      --type=merge -p "$(envsubst < jaeger-upgrade-patch.yaml)"
+
+    kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector -n ${JAEGER_NS} --timeout=300s
+    ```
+
+3. Update the OAuth2 Proxy sidecar image. Because `additionalContainers` is a list that a merge patch would replace as a whole, this container is updated with a JSON patch of its own:
+
+    ```bash {name=upgrade-tracing-opensearch:patch-oauth2-proxy-image}
+    kubectl patch opentelemetrycollector ${JAEGER_INSTANCE_NAME} -n ${JAEGER_NS} --type=json \
+      -p "[{\"op\": \"replace\", \"path\": \"/spec/additionalContainers/0/image\", \"value\": \"${JOAUTH2_PROXY_IMAGE}\"}]"
+
+    kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector -n ${JAEGER_NS} --timeout=300s
+    ```
+
+    :::warning
+    Apply this patch only after the previous step. It restarts the Pod, and a restart that still picks up the v2.0 configuration lets Jaeger recreate the index templates written in [step 4](#migrating-to-ism), dropping the read alias and the ISM rollover alias from them.
+    :::
+
+### (Optional) Updating Jaeger for Service Performance Monitoring \{#updating-jaeger-for-spm}
+
+1. Create a file named `jaeger-spm-upgrade-patch.yaml` with the following content:
+
+    ```yaml title="jaeger-spm-upgrade-patch.yaml" {name=upgrade-tracing-opensearch-spm:jaeger-spm-upgrade-patch-yaml}
+    spec:
+      config:
+        connectors:
+          spanmetrics: null
+          span_metrics: {}
+        exporters:
+          prometheus:
+            add_metric_suffixes: null
+            translation_strategy: UnderscoreEscapingWithoutSuffixes
+        service:
+          pipelines:
+            traces:
+              exporters: [debug, jaeger_storage_exporter, span_metrics]
+            metrics/spanmetrics:
+              receivers: [span_metrics]
+    ```
+
+2. Render the patch with `envsubst`, apply it, and wait for Jaeger to restart:
+
+    ```bash {name=upgrade-tracing-opensearch-spm:apply-jaeger-patch}
+    kubectl patch opentelemetrycollector ${JAEGER_INSTANCE_NAME} -n ${JAEGER_NS} \
+      --type=merge -p "$(envsubst < jaeger-spm-upgrade-patch.yaml)"
+
+    kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector -n ${JAEGER_NS} --timeout=300s
+    ```
+
+:::note
+This rename applies to the Jaeger distribution. A standalone OpenTelemetry Collector only registers `span_metrics` from Collector 0.152.0 onwards, so verify the Collector version before renaming the connector in a front Collector configuration.
+:::
+
+## Retiring the Index Cleaner \{#retiring-the-index-cleaner}
+
+The ISM policy now rolls over and deletes the numbered indices, so the `jaeger-es-index-cleaner` CronJob is no longer needed for new data. Keep it running until the date-suffixed indices left over from v2.0 have expired: ISM manages only the indices its `ism_template` patterns match, and those patterns deliberately exclude the date-suffixed ones.
+
+The CronJob is safe to leave in place. In its default mode it matches only names ending in `-YYYY-MM-DD`, and it skips indices attached to a write alias, so it never deletes a numbered index.
+
+1. Check whether any date-suffixed index is left:
+
+    ```bash {name=upgrade-tracing-opensearch:list-date-indices}
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+      "${OPENSEARCH_ENDPOINT}/_cat/indices/${JAEGER_ES_INDEX_PREFIX}-jaeger-*-2*?h=index&s=index"
+    ```
+
+2. Once the command returns nothing, delete the CronJob:
+
+    ```bash {name=upgrade-tracing-opensearch:delete-index-cleaner}
+    kubectl delete cronjob ${JAEGER_INSTANCE_NAME}-es-index-cleaner -n ${JAEGER_NS}
+    ```
+
+## Verification \{#verification}
+
+1. Confirm the component versions and that all Pods are ready:
+
+    ```bash {name=upgrade-tracing-opensearch:verify-versions}
+    kubectl -n${JAEGER_NS} get opentelemetrycollector
+    kubectl -n${JAEGER_NS} get pods
+    ```
+
+2. Confirm that Jaeger starts without deprecation warnings:
+
+    ```bash {name=upgrade-tracing-opensearch:verify-jaeger-logs}
+    kubectl logs deployment/${JAEGER_INSTANCE_NAME}-collector -n ${JAEGER_NS} \
+      -c otc-container --tail=300 | grep -iE "warn|error" || echo "No warnings"
+    ```
+
+3. Confirm that the index templates still carry the read alias and the ISM rollover alias. An empty result means that Jaeger has overwritten them, because it restarted while the v2.0 configuration was still in effect or because `create_mappings: false` is missing. Re-run the initialization Job from [Migrating Index Management to ISM](#migrating-to-ism) to restore them:
+
+    ```bash {name=upgrade-tracing-opensearch:verify-index-template}
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+      "${OPENSEARCH_ENDPOINT}/_template/${JAEGER_ES_INDEX_PREFIX}-jaeger-span" \
+      | grep -o "rollover_alias\|${JAEGER_ES_INDEX_PREFIX}-jaeger-span-read"
+    ```
+
+4. Confirm that new spans are written to the numbered index, and that the read alias still spans the date-suffixed indices:
+
+    ```bash {name=upgrade-tracing-opensearch:verify-write-target}
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+      "${OPENSEARCH_ENDPOINT}/${JAEGER_ES_INDEX_PREFIX}-jaeger-span-000001/_count?pretty"
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+      "${OPENSEARCH_ENDPOINT}/_cat/aliases/${JAEGER_ES_INDEX_PREFIX}-jaeger-span-*?v"
+    ```
+
+5. Confirm that ISM has taken the new indices over. The `index.plugins.index_state_management.policy_id` field should read `jaeger-ism-policy`. ISM discovers new indices with a background sweep, so this can take several minutes:
+
+    ```bash {name=upgrade-tracing-opensearch:verify-ism-attached}
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+      "${OPENSEARCH_ENDPOINT}/_plugins/_ism/explain/${JAEGER_ES_INDEX_PREFIX}-jaeger-span-000001?pretty"
+    ```
+
+6. Generate sample traces and confirm that they are stored and queryable, as described in the [Verification](../installing/installing-distributed-tracing-opensearch.mdx#verification) section of the installation procedure. Also confirm that a service which last reported before the upgrade is still listed, which shows that the date-suffixed indices are reachable through the read alias. If SPM is enabled, open the **Monitor** tab in the Jaeger UI and confirm that RED metrics are shown for the generated service.
