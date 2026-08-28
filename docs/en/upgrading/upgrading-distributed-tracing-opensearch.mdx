@@ -16,7 +16,7 @@ Upgrading an OpenSearch-backed deployment from v2.0 (Jaeger 2.16.0, Alauda Build
 :::warning
 This upgrade changes the index layout. A v2.0 deployment writes one date-suffixed index per day, such as `<prefix>-jaeger-span-2026-08-27`, and deletes expired indices with the `jaeger-es-index-cleaner` CronJob. A v2.1 deployment writes through a rollover alias into numbered indices, such as `<prefix>-jaeger-span-000001`, and delegates rollover and retention to an OpenSearch ISM policy.
 
-Existing indices are neither renamed nor reindexed, but Jaeger reads them only through the read alias after the switch. Step 4 attaches them to that alias, which keeps historical traces queryable.
+Existing indices are neither renamed nor reindexed, but Jaeger reads them only through the read alias after the switch. [Step 4](#migrating-to-ism) attaches them to that alias, which keeps historical traces queryable.
 :::
 
 **Prerequisites**
@@ -156,7 +156,7 @@ Choose one of the following methods:
     ```
 
 :::note
-The Operator upgrade restarts the managed collectors. The `otel` Collector does not pin `spec.image`, so it immediately picks up the Collector version shipped with the new Operator, while the Jaeger instance stays on the image pinned in `spec.image` until step 5. The renamed component types remain available as deprecated aliases, so the Collector keeps running and only logs deprecation warnings until the next step.
+The Operator upgrade restarts the managed collectors. The `otel` Collector does not pin `spec.image`, so it immediately picks up the Collector version shipped with the new Operator, while the Jaeger instance stays on the image pinned in `spec.image` until [step 5](#updating-jaeger). The renamed component types remain available as deprecated aliases, so the Collector keeps running and only logs deprecation warnings until the next step.
 :::
 
 ## Updating the OpenTelemetry Collector \{#updating-the-opentelemetry-collector}
@@ -371,7 +371,7 @@ Perform this step before updating the Jaeger configuration. Jaeger writes throug
     The initialization also updates the index templates, which Jaeger v2.20.0 needs for the additional span fields it writes, such as `scopeTags` and `references.traceState`.
 
     :::warning
-    Do not restart the Jaeger instance between this step and step 5. It still runs the v2.0 configuration, in which `create_mappings` defaults to `true`, so on startup it recreates the index templates and drops the read alias and the ISM rollover alias that this step has just written. Writes keep succeeding, so the loss is only noticed at the first rollover. If the instance does restart, re-run this Job afterwards to restore the templates.
+    Do not restart the Jaeger instance between this step and [step 5](#updating-jaeger). It still runs the v2.0 configuration, in which `create_mappings` defaults to `true`, so on startup it recreates the index templates and drops the read alias and the ISM rollover alias that this step has just written. Writes keep succeeding, so the loss is only noticed at the first rollover. If the instance does restart, re-run this Job afterwards to restore the templates.
     :::
 
 3. Attach the existing date-suffixed indices to the read alias. After the switch, Jaeger resolves reads through the read alias only, so indices that are not attached become invisible to the Jaeger UI:
@@ -388,7 +388,7 @@ Perform this step before updating the Jaeger configuration. Jaeger writes throug
     The `-2*` pattern matches the date-suffixed indices, such as `-2026-08-27`, without matching the `-000001` indices that the previous step created. An index type that has never produced a date-suffixed index returns `index_not_found_exception`, which is expected for `dependencies` and `sampling` in most deployments.
 
     :::note
-    Under alias-based rotation, Jaeger no longer limits queries by `max_span_age`, so trace lookups and the service and operation lists scan every index attached to the read alias. Attach only the indices whose traces you still need. They are removed from the alias automatically when the index cleaner deletes them in step 6.
+    Under alias-based rotation, Jaeger no longer limits queries by `max_span_age`, so trace lookups and the service and operation lists scan every index attached to the read alias. Attach only the indices whose traces you still need. They are removed from the alias automatically when the index cleaner deletes them in [step 6](#retiring-the-index-cleaner).
     :::
 
 ## Updating the Alauda Build of Jaeger v2 \{#updating-jaeger}
@@ -472,7 +472,7 @@ Perform this step before updating the Jaeger configuration. Jaeger writes throug
     ```
 
     :::warning
-    Apply this patch only after the previous step. It restarts the Pod, and a restart that still picks up the v2.0 configuration lets Jaeger recreate the index templates written in step 4, dropping the read alias and the ISM rollover alias from them.
+    Apply this patch only after the previous step. It restarts the Pod, and a restart that still picks up the v2.0 configuration lets Jaeger recreate the index templates written in [step 4](#migrating-to-ism), dropping the read alias and the ISM rollover alias from them.
     :::
 
 ### (Optional) Updating Jaeger for Service Performance Monitoring \{#updating-jaeger-for-spm}

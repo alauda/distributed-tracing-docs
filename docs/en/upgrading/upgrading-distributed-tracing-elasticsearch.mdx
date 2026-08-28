@@ -13,7 +13,7 @@ Upgrading an Elasticsearch-backed deployment from v2.0 (Jaeger 2.16.0, Alauda Bu
 5. Updating the Alauda Build of Jaeger v2
 
 :::warning
-Jaeger v2.20.0 rejects the legacy Elasticsearch rotation flags `use_aliases` and `use_ilm`. Update the image and the configuration of the Jaeger instance **in a single patch** (step 5), otherwise the new Pod exits at startup with `invalid configuration: ... deprecated ES rotation flags ... are no longer supported`. Because the new Pod never becomes ready, the previous Pod keeps serving traces, so a stalled rollout does not interrupt tracing.
+Jaeger v2.20.0 rejects the legacy Elasticsearch rotation flags `use_aliases` and `use_ilm`. Update the image and the configuration of the Jaeger instance **in a single patch** ([step 5](#updating-jaeger)), otherwise the new Pod exits at startup with `invalid configuration: ... deprecated ES rotation flags ... are no longer supported`. Because the new Pod never becomes ready, the previous Pod keeps serving traces, so a stalled rollout does not interrupt tracing.
 :::
 
 This procedure keeps all trace data in place. No index, alias, or ILM policy is recreated, and existing indices remain readable.
