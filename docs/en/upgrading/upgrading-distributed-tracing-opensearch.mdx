@@ -212,6 +212,7 @@ The Operator reissues its admission webhook certificate during the upgrade. A pa
 
     ```bash {name=upgrade-tracing-opensearch:verify-otel-collector}
     kubectl rollout status deployment/otel-collector -n ${JAEGER_NS} --timeout=180s
+    sleep 3
     kubectl logs deployment/otel-collector -n ${JAEGER_NS} --tail=200 \
       | grep -i "deprecated" || echo "No deprecation warnings"
     ```

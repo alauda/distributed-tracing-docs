@@ -203,6 +203,7 @@ The Operator upgrade restarts the managed collectors. The `otel` Collector does 
 
     ```bash {name=upgrade-tracing-elasticsearch:verify-otel-collector}
     kubectl rollout status deployment/otel-collector -n ${JAEGER_NS} --timeout=180s
+    sleep 3
     kubectl logs deployment/otel-collector -n ${JAEGER_NS} --tail=200 \
       | grep -i "deprecated" || echo "No deprecation warnings"
     ```
