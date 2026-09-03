@@ -16,7 +16,8 @@
 #
 # 附加验证: TRACING_VERIFY_TRACE_QUERY=true 时，步骤 19.1 走 ACP 的 Service 代理查
 #           Jaeger v3 Query API，断言调用链真能查到（默认关闭；两篇安装文档共用
-#           docs-runme-tests/projects/tracing/trace-query.sh）。
+#           docs-runme-tests/projects/tracing/trace-query.sh）。先按服务名 jaeger 查
+#           一次，跑过 telemetrygen 时再按 telemetrygen 查一次。
 
 set -e
 
@@ -395,15 +396,25 @@ test_installing_distributed_tracing_opensearch() {
     # jaeger_storage（存储地址 / 索引前缀 / 凭据）与 jaeger_query 的 base_path，
     # 以及 rollover / ISM 建出来的读别名，配错时上面这些照样全绿，
     # 只有真查一次 Jaeger Query API 才会暴露。
-    # 具体断言（services → operations → trace-summaries，整轮重试直到查到调用链）见
-    # docs-runme-tests/projects/tracing/trace-query.sh，两篇安装文档共用同一套逻辑。
+    # 具体断言（services → operations → trace-summaries，整轮重试直到查到足够的调用链）
+    # 见 docs-runme-tests/projects/tracing/trace-query.sh，两篇安装文档共用同一套逻辑。
     # SPM 不在本验证范围内（spanmetrics 走 monitoring 存储），所以放在 SPM 章节之前。
+    #
+    # 查两次，覆盖两条不同的通路：
+    #   - 服务 jaeger：Jaeger 自身的调用链，跳过 telemetrygen 时也一定有，用它保证
+    #     无论怎么编排都至少验一次「写得进、查得出」；
+    #   - 服务 telemetrygen：只在真跑过 telemetrygen 时查，走的是业务侧 span 经
+    #     OTel Collector → Jaeger → 存储的完整通路——正是文档 Verification 里
+    #     「在 Service 下拉框选 telemetrygen 再 Find Traces」那一步的自动化。
     #
     # 两个仓库的改动可能不同时落地（lynx/docs-refs.tsv 里 tracing 指向的是会移动的分支），
     # 框架尚未带上 trace-query.sh 时不应让整篇文档测试挂掉——但开关已打开却做不了
     # 验证属于配置错误，必须报错而不是静默跳过。
     if declare -f verify_jaeger_trace_query > /dev/null 2>&1; then
         verify_jaeger_trace_query || return 1
+        if [ "${SKIP_TELEMETRYGEN:-false}" != "true" ]; then
+            verify_jaeger_trace_query telemetrygen || return 1
+        fi
     elif [ "${TRACING_VERIFY_TRACE_QUERY:-false}" = "true" ]; then
         log_error "当前 docs-runme-tests 框架缺少 verify_jaeger_trace_query（projects/tracing/trace-query.sh），无法执行调用链查询验证"
         return 1
