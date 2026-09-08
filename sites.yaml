@@ -1,9 +1,9 @@
 - name: acp
   base: /container_platform
-  version: "4.3"
+  version: "4.4"
 - name: servicemesh
   base: /servicemesh
-  version: "2.1"
+  version: "2.2"
 - name: opentelemetry
   base: /opentelemetry
-  version: "2.0"
+  version: "2.1"
