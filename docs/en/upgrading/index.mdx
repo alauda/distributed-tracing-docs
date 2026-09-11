@@ -6,4 +6,21 @@ weight: 140
 
 This documentation provides information about upgrading the Alauda Distributed Tracing.
 
+## Upgrade Path
+
+The table below contains the complete upgrade path. When upgrading, you need to upgrade the versions in sequence. Skipping a version is not supported.
+
+| No. | Alauda Build of Jaeger v2 | Jaeger | Alauda Build of OpenTelemetry v2 Operator |
+| --- | ------------------------- | ------ | ----------------------------------------- |
+| 1   | v2.0.z                    | 2.16.0 | 0.147.0                                   |
+| 2   | v2.1.z                    | 2.20.0 | 0.157.0                                   |
+
+Each Alauda Build of Jaeger v2 version is deployed by the Alauda Build of OpenTelemetry v2 Operator listed in the same row, so both must be upgraded within the same step, as described in the procedures below. For the Alauda Container Platform versions supported by each release, see the [Compatibility and support matrix](../about/release-notes/compatibility-support-matrix.mdx).
+
+:::info
+In the version numbers above, the `.z` indicates the latest available patch version for that minor release.
+When performing an upgrade, you should always use the most recent patch version to ensure you benefit from the latest security updates and bug fixes.
+The latest patch versions for each release can be found in the [Release Notes](../about/release-notes/).
+:::
+
 <Overview overviewHeaders={[]} />
