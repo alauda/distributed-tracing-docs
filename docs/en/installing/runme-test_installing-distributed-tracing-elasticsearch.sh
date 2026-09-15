@@ -7,6 +7,9 @@
 # 前置步骤: TRACING_INSTALL_ES=true 且 PKG_LOG_CENTER_URL 非空时，步骤 0 自动安装
 #           ACP 日志存储 Elasticsearch（logcenter 集群插件）到 TRACING_ACP_ES_CLUSTER
 #           指定集群（已安装则跳过），见 docs-runme-tests/projects/tracing/elasticsearch.sh。
+# 多集群:   ./run.sh --project tracing --file installing-distributed-tracing-elasticsearch
+#           --cluster <name> 可指定安装目标集群（多集群网格的每个集群都要装一套调用链）；
+#           配合 TRACING_JAEGER_ES_INDEX_PREFIX 让各集群共用一套调用链索引（步骤 5.1）。
 # 附加验证: TRACING_VERIFY_TRACE_QUERY=true 时，步骤 19.1 走 ACP 的 Service 代理查
 #           Jaeger v3 Query API，断言调用链真能查到（默认关闭；两篇安装文档共用
 #           docs-runme-tests/projects/tracing/trace-query.sh）。先按服务名 jaeger 查
@@ -247,6 +250,18 @@ test_installing_distributed_tracing_elasticsearch() {
         log_error "设置 Jaeger 默认环境变量失败"
         return 1
     }
+
+    # 步骤 5.1: 索引前缀覆盖（默认沿用文档的 acp-${CLUSTER_NAME}）
+    # 多集群服务网格里每个集群都要装一套调用链，但调用链索引要共用一套，否则同一条
+    # 跨集群链路会被拆进各集群自己的索引里，查不到完整调用链。设置
+    # TRACING_JAEGER_ES_INDEX_PREFIX 即可让两个集群写同一套索引；留空或不设时保持
+    # 文档默认值（按集群名分库），单集群场景行为不变。
+    if [ -n "${TRACING_JAEGER_ES_INDEX_PREFIX:-}" ]; then
+        export JAEGER_ES_INDEX_PREFIX="$TRACING_JAEGER_ES_INDEX_PREFIX"
+        log_info "索引前缀改用 TRACING_JAEGER_ES_INDEX_PREFIX: ${JAEGER_ES_INDEX_PREFIX}"
+    else
+        log_info "索引前缀沿用文档默认值: ${JAEGER_ES_INDEX_PREFIX}"
+    fi
 
     # 步骤 6: 创建 Jaeger 命名空间与 ES 凭据 Secret
     log_info "步骤 6: 创建命名空间与 ES 凭据 Secret"
