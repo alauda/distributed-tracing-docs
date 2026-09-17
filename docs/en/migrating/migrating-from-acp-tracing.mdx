@@ -76,14 +76,6 @@ This works because Jaeger 2.20.0 reads documents written by Jaeger 1.60.0 as the
 
 Because the new Jaeger UI is complete from the moment the aliases are attached, users do not have to know which UI holds which time range, and the legacy stack no longer has to be kept alive for a full retention period just to answer historical queries.
 
-:::warning Both Jaeger instances must use the same Elasticsearch cluster
-An alias cannot span two Elasticsearch clusters. This is satisfied by default, because the new Jaeger reuses the endpoint and credentials recorded in [Inventory the legacy Jaeger deployment](#inventory-the-legacy-jaeger-deployment). If the legacy data lives in a different Elasticsearch cluster, it has to be moved there first with snapshot/restore or reindex-from-remote, which is outside the scope of this document.
-:::
-
-:::danger Do not write to both Jaeger backends at the same time
-Once the legacy indices are attached to the read aliases, exporting the same span to both the legacy Jaeger and the new Jaeger makes **every span appear twice** in the new Jaeger UI: the legacy Jaeger indexes one copy into the legacy index family, the new Jaeger indexes another into the new one, and a single read alias resolves both. Jaeger does not deduplicate spans, so a five-span trace is rendered as ten. Keep exactly one Jaeger exporter in the Collector trace pipeline, as described in [Switch the v2 OpenTelemetry Collector to the new Jaeger](#switch-the-v2-opentelemetry-collector-to-the-new-jaeger).
-:::
-
 ## Prerequisites
 
 - An active ACP CLI (`kubectl`) session by a cluster administrator with the `cluster-admin` role.
@@ -170,8 +162,6 @@ The backup files are only used as configuration references and rollback artifact
 
 The new Jaeger writes to a separate index family (`acp-<cluster>-jaeger-*`) while the legacy indices (`acp-tracing-<cluster>-jaeger-*`) age out over the legacy retention period. Plan for one extra full retention's worth of trace storage in Elasticsearch.
 
-Also note how many legacy indices you are about to attach to the read aliases. Under alias-based rotation Jaeger no longer prunes indices by `max_span_age`, so every index attached to a read alias is scanned on every query. One retention period's worth of daily indices is unproblematic; if the legacy family holds far more than that, attach only the date range you still need, as described in [Attach the legacy indices to the new read aliases](#attach-the-legacy-indices).
-
 ## Migration procedure
 
 <Steps>
@@ -239,13 +229,13 @@ Perform this step before the cutover, so that the new Jaeger UI is already compl
     **Example output**
 
     ```text {name=migrate-acp-tracing:verify-legacy-indices-attached-output}
-    alias                            index                                         is_write_index
-    acp-global-jaeger-service-read   acp-global-jaeger-service-000001              -
-    acp-global-jaeger-service-read   acp-tracing-global-jaeger-service-2026-09-16  -
-    acp-global-jaeger-service-write  acp-global-jaeger-service-000001              true
-    acp-global-jaeger-span-read      acp-global-jaeger-span-000001                 -
-    acp-global-jaeger-span-read      acp-tracing-global-jaeger-span-2026-09-16     -
-    acp-global-jaeger-span-write     acp-global-jaeger-span-000001                 true
+    alias                                     index                                                  is_write_index
+    acp-${CLUSTER_NAME}-jaeger-service-read   acp-${CLUSTER_NAME}-jaeger-service-000001              -
+    acp-${CLUSTER_NAME}-jaeger-service-read   acp-tracing-${CLUSTER_NAME}-jaeger-service-YYYY-MM-DD  -
+    acp-${CLUSTER_NAME}-jaeger-service-write  acp-${CLUSTER_NAME}-jaeger-service-000001              true
+    acp-${CLUSTER_NAME}-jaeger-span-read      acp-${CLUSTER_NAME}-jaeger-span-000001                 -
+    acp-${CLUSTER_NAME}-jaeger-span-read      acp-tracing-${CLUSTER_NAME}-jaeger-span-YYYY-MM-DD     -
+    acp-${CLUSTER_NAME}-jaeger-span-write     acp-${CLUSTER_NAME}-jaeger-span-000001                 true
     ```
 
     Only the `-000001` indices carry `is_write_index: true`. The legacy indices are attached for reading only, so the new Jaeger cannot write into them.
@@ -253,7 +243,7 @@ Perform this step before the cutover, so that the new Jaeger UI is already compl
 4. Open the new Jaeger UI at `<platform-url>/clusters/<cluster>/jaeger` and confirm that services which reported before the cutover are listed and that one of their traces can be opened.
 
     :::note
-    Pick a time range in the UI that covers the legacy data. If you check the API with `curl` instead, pass explicit `start` and `end` values in microseconds: the `lookback` query parameter is not honored by the Jaeger HTTP API, which falls back to a fixed default window. The Jaeger UI always sends an explicit range, so its time-range picker behaves as expected.
+    Pick a time range in the UI that covers the legacy data. The Jaeger UI always sends an explicit range, so its time-range picker behaves as expected.
     :::
 
 ### Switch the v2 OpenTelemetry Collector to the new Jaeger \{#switch-the-v2-opentelemetry-collector-to-the-new-jaeger}
@@ -469,56 +459,6 @@ Run this step after the cutover, once the legacy Jaeger has stopped creating new
 
 When an index reaches the end of its retention, Elasticsearch deletes it and Elasticsearch removes it from the read alias automatically — the alias needs no maintenance.
 
-:::note ILM expires indices by creation date
-`min_age` is measured from the index creation date, not from the date in the index name and not from the timestamps of the spans it holds. For the daily indices created by the legacy Jaeger these are the same day, so the effective retention does not change. An index that was reindexed or restored from a snapshot carries a newer creation date and therefore lives longer than its name suggests.
-:::
-
-:::tip Alternative: keep an index cleaner instead of ILM
-To preserve the behavior of the legacy setup rather than moving to ILM, recreate the CronJob with the `jaeger-es-index-cleaner` image shipped by the Alauda Build of Jaeger v2 cluster plugin and point it at the legacy prefix:
-
-```bash {name=migrate-acp-tracing:legacy-index-cleaner-cronjob}
-export JAEGER_ES_INDEX_CLEANER_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest \
-  -o jsonpath='{.data.jaeger-es-index-cleaner-image}')
-
-kubectl apply -n ${JAEGER_NS} -f - <<EOF
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: jaeger-legacy-es-index-cleaner
-spec:
-  schedule: "55 23 * * *"
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-          - name: es-index-cleaner
-            image: "${JAEGER_ES_INDEX_CLEANER_IMAGE}"
-            args: ["${LEGACY_RETENTION_DAYS}", "${ES_ENDPOINT}"]
-            env:
-            - name: INDEX_PREFIX
-              value: "${LEGACY_ES_INDEX_PREFIX}"
-            - name: ES_TLS_ENABLED
-              value: "true"
-            - name: ES_TLS_SKIP_HOST_VERIFY
-              value: "true"
-            - name: ES_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: es-credentials
-                  key: ES_USER
-            - name: ES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: es-credentials
-                  key: ES_PASS
-          restartPolicy: Never
-EOF
-```
-
-The cleaner deletes indices by creation date, like the ILM policy above, and skips any index attached to a **write** alias, so it can never delete the new `-000001` indices. Indices attached to a **read** alias are deleted normally, so the attachment made in [Attach the legacy indices to the new read aliases](#attach-the-legacy-indices) does not get in its way.
-:::
-
 ### Uninstall the legacy Jaeger instance \{#uninstall-the-legacy-jaeger-instance}
 
 Delete the legacy `Jaeger` instance and its supporting resources. The Elasticsearch indices are not touched, so pre-cutover traces stay queryable in the new Jaeger UI:
@@ -587,12 +527,6 @@ kubectl delete crd jaegers.jaegertracing.io
 
     curl -k -sS -u "${ES_USER}:${ES_PASS}" -X DELETE \
       "${ES_ENDPOINT}/_ilm/policy/jaeger-legacy-ilm-policy"
-    ```
-
-    If you chose the index-cleaner alternative in [Take over retention of the legacy indices](#take-over-retention-of-the-legacy-indices), delete its CronJob instead of the policy:
-
-    ```bash {name=migrate-acp-tracing:cleanup-legacy-cronjob}
-    kubectl -n ${JAEGER_NS} delete cronjob jaeger-legacy-es-index-cleaner --ignore-not-found
     ```
 
 </Steps>
