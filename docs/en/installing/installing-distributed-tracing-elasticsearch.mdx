@@ -499,9 +499,11 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     envsubst < jaeger.yaml | kubectl apply -f -
     ```
 
-11. Wait for the Jaeger Pod to be ready:
+11. Wait for the Jaeger Pod to be ready. The Deployment is rendered by the Operator from the `OpenTelemetryCollector` resource, a few seconds after the resource is applied, so wait for it to exist before waiting for its rollout:
 
     ```bash {name=install-tracing-elasticsearch:wait-jaeger-rollout}
+    kubectl wait --for=create deployment/${JAEGER_INSTANCE_NAME}-collector \
+      -n ${JAEGER_NS} --timeout=2m
     kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector \
       -n ${JAEGER_NS} --timeout=180s
     ```
@@ -644,9 +646,11 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
     envsubst < otel-collector.yaml | kubectl apply -f -
     ```
 
-3. Wait for the Collector pod to be ready:
+3. Wait for the Collector pod to be ready. As above, the Deployment appears only once the Operator has processed the resource:
 
     ```bash {name=install-tracing-elasticsearch:wait-otel-collector-rollout}
+    kubectl wait --for=create deployment/otel-collector \
+      -n ${JAEGER_NS} --timeout=2m
     kubectl rollout status deployment/otel-collector \
       -n ${JAEGER_NS} --timeout=180s
     ```
