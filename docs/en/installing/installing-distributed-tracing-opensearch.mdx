@@ -54,6 +54,8 @@ Cluster plugins are installed by creating a `ModuleInfo` resource **in the `glob
     EOF
     ```
 
+    The platform rewrites `metadata.name` while it admits the resource, and stores the record as `<target-cluster>-<hash>`. The name you applied does not exist afterwards, so running this command again reports `AlreadyExists` for a name you never wrote and creates nothing. Identify the record by its labels, as the next step does.
+
 3. Verify the installation in the `global` cluster:
 
     ```bash {name=install-tracing-opensearch:verify-jaeger-plugin-moduleinfo}
