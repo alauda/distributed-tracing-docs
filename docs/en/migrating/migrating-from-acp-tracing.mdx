@@ -174,14 +174,18 @@ Follow [Deploying the Alauda Build of Jaeger v2](../installing/installing-distri
 Only follow the *Deploying the Alauda Build of Jaeger v2* section linked above. **Do not** execute the *Deploying the OpenTelemetry Collector* section of the same installation guide — the application-facing v2 OpenTelemetry Collector was already deployed in `cpaas-system` during [Stage 1 (OpenTelemetry v2 migration)](#migrate-alauda-build-of-opentelemetry-to-v2). Running that section would create a duplicate `otel` Collector in `jaeger-system` that no application talks to.
 :::
 
-When you reach the variable-setup step, keep the **default index prefix** so that the new Jaeger writes to indices that are clearly separated from the legacy ones:
+When you reach the variable-setup step, keep the **default index prefix and base path**. Both must differ from the ones of the legacy instance:
 
 ```bash {name=migrate-acp-tracing:set-jaeger-vars}
 export JAEGER_NS="jaeger-system"
 export JAEGER_INSTANCE_NAME="jaeger"
-export JAEGER_ES_INDEX_PREFIX="acp-${CLUSTER_NAME}"      # different from the legacy "acp-tracing-${CLUSTER_NAME}"
-export JAEGER_BASEPATH="/clusters/${CLUSTER_NAME}/jaeger"  # different from the legacy "/clusters/${CLUSTER_NAME}/acp/jaeger"
+export JAEGER_ES_INDEX_PREFIX="acp-${CLUSTER_NAME}"      # must differ from the legacy "acp-tracing-${CLUSTER_NAME}"
+export JAEGER_BASEPATH="/clusters/${CLUSTER_NAME}/jaeger"  # must differ from the legacy "/clusters/${CLUSTER_NAME}/acp/jaeger"
 ```
+
+:::warning A shared index prefix breaks the cleanup of the legacy index family
+[Take over retention of the legacy indices](#take-over-retention-of-the-legacy-indices) and [Disable the legacy feature switch and retire the legacy index family](#disable-the-legacy-feature-switch-and-clean-up-legacy-indices) select indices by `${LEGACY_ES_INDEX_PREFIX}-jaeger-*`. If the new family shares that prefix, the pattern also matches its numbered indices: the delete-only policy is applied to them, and the retire step deletes them together with their read and write aliases. The rollover initialization of the new family additionally overwrites the legacy index templates, because both families then carry the same template names.
+:::
 
 After completing the installation steps, verify that:
 
