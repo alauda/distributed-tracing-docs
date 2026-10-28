@@ -22,7 +22,7 @@ Existing indices are neither renamed nor reindexed, but Jaeger reads them only t
 **Prerequisites**
 
 - An Alauda Distributed Tracing v2.0 deployment installed as described in [Installing Alauda Distributed Tracing with OpenSearch](../installing/installing-distributed-tracing-opensearch.mdx).
-- The Alauda Build of Jaeger v2 cluster plugin and the Alauda Build of OpenTelemetry v2 Operator 0.157.0 are published to the platform.
+- The **Alauda Container Platform Distributed Tracing** (previously **Alauda Build of Jaeger v2**) cluster plugin and the **Alauda Container Platform Application Observability** (previously **Alauda Build of OpenTelemetry v2**) Operator 0.157.0 are published to the platform.
 - An active ACP CLI (`kubectl`) session by a cluster administrator with the `cluster-admin` role, for both the target cluster and the `global` cluster.
 - Review the [Upgrade Notes](../about/release-notes/v2-1-0.mdx#upgrade-notes) for the behavior changes introduced by this release.
 
@@ -58,7 +58,7 @@ Starting with v2.1, the container images of the tracing components are delivered
 
 1. In the platform management view, navigate to **Administrator** > **Marketplace** > **Cluster Plugins**.
 2. Select the cluster where the tracing components are deployed.
-3. Find **Alauda Build of Jaeger v2** and click **Install**. The plugin requires no installation parameters.
+3. Find **Alauda Container Platform Distributed Tracing** (shown as **Alauda Build of Jaeger v2** for a package published before the rename) and click **Install**. The plugin requires no installation parameters.
 
 ### Installing via the CLI
 
@@ -121,8 +121,8 @@ The Operator is subscribed with the `Manual` approval strategy, so the upgrade m
 
 Choose one of the following methods:
 
-- **Batch upgrade**: navigate to **Platform Management** > **Cluster Management** > **Clusters** > *cluster* > **Functional Components**, and upgrade **Alauda Build of OpenTelemetry v2**.
-- **Individual upgrade**: navigate to **Administrator** > **Marketplace** > **OperatorHub**, open **Alauda Build of OpenTelemetry v2**, and approve the pending upgrade request.
+- **Batch upgrade**: navigate to **Platform Management** > **Cluster Management** > **Clusters** > *cluster* > **Functional Components**, and upgrade **Alauda Container Platform Application Observability** (shown as **Alauda Build of OpenTelemetry v2** for a package published before the rename).
+- **Individual upgrade**: navigate to **Administrator** > **Marketplace** > **OperatorHub**, open **Alauda Container Platform Application Observability** (shown as **Alauda Build of OpenTelemetry v2** for a package published before the rename), and approve the pending upgrade request.
 
 ### Upgrading via the CLI
 
