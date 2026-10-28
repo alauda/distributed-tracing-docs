@@ -11,6 +11,15 @@ Installing the Alauda Distributed Tracing platform involves the following steps:
 3. Deploying the Alauda Build of Jaeger v2
 4. Deploying the OpenTelemetry Collector to forward traces to Jaeger
 
+:::note
+Starting in ACP 4.5, the following plugins have new names:
+
+- **Alauda Build of Jaeger v2** is named **Alauda Container Platform Distributed Tracing**.
+- **Alauda Build of OpenTelemetry v2** is named **Alauda Container Platform Application Observability**.
+
+Search for the new names when you download the plugins from the Customer Portal. A plugin package published before the rename still shows the former name in the platform after you upload it.
+:::
+
 ## Installing the Alauda Build of Jaeger v2 Cluster Plugin \{#installing-the-alauda-build-of-jaeger-v2-cluster-plugin}
 
 The Alauda Build of Jaeger v2 cluster plugin ships the container images required by the tracing components: Jaeger (`jaeger`, `jaeger-es-rollover`, `jaeger-es-index-cleaner`) and OAuth2 Proxy. Installing the plugin synchronizes these images to the platform's built-in registry and creates a ConfigMap named `jaeger-cluster-plugin-manifest` in the `cpaas-system` namespace of the target cluster. Later steps read the image addresses from this ConfigMap.
@@ -19,7 +28,7 @@ The Alauda Build of Jaeger v2 cluster plugin ships the container images required
 
 1. In the platform management view, navigate to **Administrator** > **Marketplace** > **Cluster Plugins**.
 2. Select the cluster where the tracing components will be deployed.
-3. Find **Alauda Build of Jaeger v2** and click **Install**. The plugin requires no installation parameters.
+3. Find **Alauda Container Platform Distributed Tracing** (shown as **Alauda Build of Jaeger v2** for a package published before the rename) and click **Install**. The plugin requires no installation parameters.
 
 :::note
 If the plugin is not listed, download the plugin package from the Customer Portal and publish it to the platform with the `violet` tool, or contact technical support.
@@ -88,8 +97,8 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
 **Prerequisites**
 
-- The Alauda Build of Jaeger v2 cluster plugin is installed.
-- The Alauda Build of OpenTelemetry v2 Operator is installed.
+- The **Alauda Container Platform Distributed Tracing** (previously **Alauda Build of Jaeger v2**) cluster plugin is installed.
+- The **Alauda Container Platform Application Observability** (previously **Alauda Build of OpenTelemetry v2**) Operator is installed.
 - An Elasticsearch 8.x instance is available, and you have the endpoint URL, username, and password for it.
 - An active ACP CLI (`kubectl`) session by a cluster administrator with the `cluster-admin` role.
 
