@@ -1,0 +1,110 @@
+---
+weight: 20
+---
+
+# Filtering Policies and Gateway Configuration
+
+:::warning Technology Preview
+Multi-tenant tracing is a Technology Preview feature. Evaluate it within the documented limits and do not treat it as production-supported.
+:::
+
+This page describes how the observability gateway processes query results, lists the fields of the gateway configuration, and lists the known limitations of multi-tenant tracing.
+
+## Filtering Policies \{#filtering-policies}
+
+The gateway returns the responses of Jaeger to platform administrators unchanged. For other users, it determines the namespace of each span in the response, checks whether the user can `get` the `traces` resource of the `tracing.alauda.io` API group in that namespace, and processes the spans of namespaces the user cannot access according to the filtering policy.
+
+### Namespace of a span
+
+- A span belongs to the namespace in the `k8s.namespace.name` resource attribute, which the platform OpenTelemetry Collector records. In the responses of the Jaeger v1 Query API, the attribute is a process tag.
+- Spans without this attribute are treated as belonging to a namespace the user cannot access.
+- Results that contain only service names, such as operation lists, trace summaries, and SPM metrics, use the namespace suffix of the service name, as in `checkout.shop`. A suffix that is not the name of an existing namespace is treated as a namespace the user cannot access.
+
+### Policies
+
+Set the policy in the `filter.otherNamespaceSpans` field of the backend in the [gateway configuration](#gateway-configuration):
+
+| Policy | Spans of namespaces the user cannot access |
+|---|---|
+| `mask` (default) | Returned with their names, timestamps, durations, IDs, and references. Span tags are reduced to `span.kind`, `error`, and `otel.status_code`; logs and warnings are removed. The process keeps only the service name and the namespace attribute. The structure of the trace stays intact. |
+| `drop` | Removed, together with the processes that no remaining span refers to. A trace without remaining spans is removed from search results, and a query for it by ID returns `404`, as Jaeger does for a trace that does not exist. |
+| `keep` | Returned unchanged. The gateway then only authenticates users. |
+
+### Endpoints
+
+The following table shows how the gateway processes each endpoint of the Jaeger Query API for users who are not platform administrators:
+
+| Endpoint | `mask` | `drop` | `keep` |
+|---|---|---|---|
+| Services: `/api/services`, `/api/v3/services` | Unchanged | Unchanged | Unchanged |
+| Operations: `/api/services/{service}/operations`, `/api/operations`, `/api/v3/operations` | Unchanged | Empty list for a service in a namespace the user cannot access | Unchanged |
+| Traces: `/api/traces`, `/api/traces/{id}`, `/api/v3/traces`, `/api/v3/traces/{id}` | Spans masked | Spans removed | Unchanged |
+| Trace summaries: `/api/v3/trace-summaries` | Unchanged | Services the user cannot access are removed, and the span and error counts are recalculated | Unchanged |
+| SPM metrics: `/api/metrics/latencies`, `/api/metrics/calls`, `/api/metrics/errors` | Series of services the user cannot access are removed | Same as `mask` | Unchanged |
+| Dependencies: `/api/dependencies`, `/api/deep-dependencies` | Empty result | Empty result | Empty result |
+| Other `/api/*` endpoints, such as archive, transform, and quality metrics | `403` | `403` | `403` |
+
+The Jaeger UI pages and static files are served to every authenticated user. A query for a service in a namespace the user cannot access does not fail: under `mask` it returns masked traces, and under `drop` it returns no results.
+
+## Gateway Configuration \{#gateway-configuration}
+
+The gateway reads `config.yaml` from the `${JAEGER_INSTANCE_NAME}-gateway-config` ConfigMap when it starts. After you change the ConfigMap, restart the Jaeger Pod:
+
+```bash
+kubectl rollout restart deployment/${JAEGER_INSTANCE_NAME}-collector -n ${JAEGER_NS}
+```
+
+The gateway does not start if the configuration contains an unknown field or an invalid value; the log of the `observability-gateway` container names the field. Durations use the Go format, such as `60s` or `5m`. Sizes use the Kubernetes quantity format, such as `64Mi`. A field that is omitted or set to `0` takes its default value.
+
+### Global fields
+
+| Field | Default | Description |
+|---|---|---|
+| `listen` | `:4180` | Business port. The Jaeger Service and the Ingress forward requests to this port. |
+| `opsListen` | `:8081` | Operations port, which serves `/healthz`, `/readyz`, and `/metrics` without authentication. Do not expose it through the Ingress. |
+| `cluster` | None (required) | Name of the cluster on the platform. |
+| `platform.url` | None (required) | Address of the platform, without a path. The gateway authenticates users and runs the built-in login through it. |
+| `platform.caFile` | Empty | PEM file with the CA certificate that verifies the platform certificate. |
+| `platform.insecureSkipVerify` | `false` | Skips the verification of the platform certificate. Use it for testing only: the gateway sends user credentials to the platform. |
+| `authn.cacheTTL` | `60s` | How long a successful authentication is cached, at most until the token expires. |
+| `authn.negativeTTL` | `10s` | How long a failed authentication is cached. |
+| `authn.cacheMaxEntries` | `10000` | Maximum number of cached authentication results. |
+| `authz.cacheTTL` | `60s` | How long a permission check of a user in a namespace is cached. Changes to role bindings take effect after this time. |
+| `authz.cacheMaxEntries` | `50000` | Maximum number of cached permission checks. |
+| `authz.concurrency` | `16` | Maximum number of concurrent namespace permission checks for one request. |
+| `limits.maxBodyBytes` | `64Mi` | Maximum size of a Jaeger response that the gateway processes, after decompression. Larger responses fail with `502`. |
+| `limits.inflightBodyBytes` | `128Mi` | Memory budget for all responses being processed at the same time. Must be at least twice `limits.maxBodyBytes`. |
+| `limits.queueTimeout` | `10s` | Maximum time a request waits for the memory budget before it fails with `503`. |
+| `limits.upstreamTimeout` | `60s` | Maximum time to wait for the response headers of Jaeger before the request fails with `504`. |
+| `log.level` | `info` | `debug`, `info`, `warn`, or `error`. The gateway writes one audit log line per request at the `info` level, so `warn` and `error` turn the audit log off. |
+
+### Backend fields
+
+The `backends` list contains one entry for the Jaeger instance:
+
+| Field | Default | Description |
+|---|---|---|
+| `name` | Same as `type` | Name of the backend in metrics and audit logs. |
+| `type` | None (required) | `jaeger`. |
+| `basePath` | None (required) | Path under which the Jaeger UI is served, such as `/clusters/<cluster>/jaeger`. Must match the Ingress path. |
+| `upstream` | None (required) | Address of the Jaeger query service, including its base path, such as `http://127.0.0.1:16686/clusters/<cluster>/jaeger`. |
+| `permission.group`, `permission.resource`, `permission.verb` | `tracing.alauda.io`, `traces`, `get` | Permission checked for each namespace. |
+| `filter.attribute` | `k8s.namespace.name` | Resource attribute that holds the namespace of a span. |
+| `filter.otherNamespaceSpans` | `mask` | [Filtering policy](#filtering-policies): `mask`, `drop`, or `keep`. |
+| `login.enabled` | `false` | Enables the built-in login for browsers. |
+| `login.clientID` | `alauda-auth` | OIDC client ID of the platform. |
+| `login.clientSecretFile` | Empty | File with the OIDC client secret of the platform. |
+| `login.cookieSecretFile` | None (required when the login is enabled) | File with the key that encrypts the session cookies, at least 16 characters long. All replicas must use the same key. |
+| `login.externalURL` | None (required when the login is enabled) | Address at which browsers reach the platform, without a path. The callback address is `<externalURL><basePath>/oauth2/callback`, which the OIDC client of the platform must allow. When the address uses `https`, the session cookies are marked `Secure`. |
+| `login.refreshBefore` | `5m` | The gateway refreshes the ID token of a session when its remaining lifetime is shorter than this value. |
+
+## Known Limitations \{#known-limitations}
+
+- The service list is not filtered. Every authenticated user, including a user without access to any namespace, sees all service names, and therefore the namespace names in their suffixes.
+- Under the `mask` policy, every authenticated user sees the structure of all traces: service names, span names, durations, and status.
+- Search conditions apply to all spans, including the spans of namespaces the user cannot access. By searching with guessed tag values, a user can learn tag values of such spans.
+- The gateway authenticates ID tokens and API tokens through the platform in the `global` cluster. While the platform is unreachable, these users cannot query traces; ServiceAccount tokens are authenticated by the cluster itself and keep working.
+- Changes to role bindings and user groups take effect within about one minute with the default cache settings. A user group change becomes effective only after the platform reports the new groups.
+- The dependency graph is not supported: users who are not platform administrators get an empty result.
+- Spans that the platform Collector cannot associate with a Pod have no namespace, and only platform administrators can view them in full. See [Sending trace data to the platform Collector](./installing-multi-tenant-tracing-opensearch.mdx#sending-trace-data-to-the-platform-collector).
+- Service names change to `<service>.<namespace>`. Alerts, dashboards, and SPM queries based on service names must use the new names.
