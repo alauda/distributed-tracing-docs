@@ -66,12 +66,15 @@ The gateway does not start if the configuration contains an unknown field or an 
 | `platform.url` | None (required) | Address of the platform, without a path. The gateway authenticates users and runs the built-in login through it. |
 | `platform.caFile` | Empty | PEM file with the CA certificate that verifies the platform certificate. |
 | `platform.insecureSkipVerify` | `false` | Skips the verification of the platform certificate. Use it for testing only: the gateway sends user credentials to the platform. |
+| `platform.timeout` | `5s` | Timeout of each request that the gateway sends to the platform to authenticate a user or to run the built-in login. |
 | `authn.cacheTTL` | `60s` | How long a successful authentication is cached, at most until the token expires. |
 | `authn.negativeTTL` | `10s` | How long a failed authentication is cached. |
 | `authn.cacheMaxEntries` | `10000` | Maximum number of cached authentication results. |
+| `authn.tokenReviewTimeout` | `5s` | Timeout of each authentication of a ServiceAccount token by the cluster. A request whose authentication times out fails with `503`. |
 | `authz.cacheTTL` | `60s` | How long a permission check of a user in a namespace is cached. Changes to role bindings take effect after this time. |
 | `authz.cacheMaxEntries` | `50000` | Maximum number of cached permission checks. |
 | `authz.concurrency` | `16` | Maximum number of concurrent namespace permission checks for one request. |
+| `authz.sarTimeout` | `5s` | Timeout of each permission check. A namespace whose check times out is treated as a namespace the user cannot access. If the check of whether the user is a platform administrator times out, the request fails with `503`. |
 | `limits.maxBodyBytes` | `64Mi` | Maximum size of a Jaeger response that the gateway processes, after decompression. Larger responses fail with `502`. |
 | `limits.inflightBodyBytes` | `128Mi` | Memory budget for all responses being processed at the same time. Must be at least twice `limits.maxBodyBytes`. |
 | `limits.queueTimeout` | `10s` | Maximum time a request waits for the memory budget before it fails with `503`. |
