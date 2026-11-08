@@ -80,6 +80,31 @@ _deploy_telemetrygen() {
     eval "$content"
 }
 
+# 断言 dependencies / sampling 模板已限定到本前缀（index_patterns 为 <前缀>-jaeger-<类型>-*、order 为 1），
+# 且这两类 -0* 索引上只有本前缀本类型的 read / write alias（文档 verify-index-templates 只打印，断言在此）。
+# 共用一个 OpenSearch 的多个实例互挂 alias、rollover_alias 被覆盖时，ISM 会卡在 rollover 失败。
+_verify_restricted_templates() {
+    local type template body pattern order extra
+    for type in dependencies sampling; do
+        template="${JAEGER_ES_INDEX_PREFIX}-jaeger-${type}"
+        body=$(curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" "${OPENSEARCH_ENDPOINT}/_template/${template}") || return 1
+        pattern=$(echo "$body" | jq -r --arg t "$template" '.[$t].index_patterns | join(",")')
+        order=$(echo "$body" | jq -r --arg t "$template" '.[$t].order')
+        if [ "$pattern" != "${template}-*" ] || [ "$order" != "1" ]; then
+            log_error "模板 ${template} 未限定到本前缀: index_patterns=${pattern} order=${order}"
+            return 1
+        fi
+        extra=$(curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" "${OPENSEARCH_ENDPOINT}/${template}-0*/_alias" \
+            | jq -r --arg t "$template" '[.[].aliases | keys[] | select(. != $t + "-read" and . != $t + "-write")] | unique | join(",")')
+        if [ -n "$extra" ]; then
+            log_error "${template} 的索引上还挂着其他实例的 alias: ${extra}"
+            return 1
+        fi
+    done
+    log_success "dependencies / sampling 模板已限定到前缀 ${JAEGER_ES_INDEX_PREFIX}"
+    return 0
+}
+
 # 调用链查询验证的守卫封装（步骤 19.1 与 SPM 步骤 27.1 共用）。
 # 用法: _verify_trace_query [<服务名>]
 # 真正的断言逻辑在 docs-runme-tests/projects/tracing/trace-query.sh，两篇安装文档共用；
@@ -316,6 +341,18 @@ test_installing_distributed_tracing_opensearch() {
         return 1
     }
     tracing_verify_ism_attached || return 1
+
+    # 步骤 8.3: 把 dependencies / sampling 索引模板限定到本前缀，并修复 init 刚建出的索引
+    log_info "步骤 8.3: 限定 dependencies / sampling 索引模板的前缀"
+    runme run install-tracing-opensearch:restrict-index-templates || {
+        log_error "限定索引模板失败"
+        return 1
+    }
+    runme run install-tracing-opensearch:verify-index-templates || {
+        log_error "查询索引模板失败"
+        return 1
+    }
+    _verify_restricted_templates || return 1
 
     # 步骤 9: 清理 rollover-init Job
     log_info "步骤 9: 清理 rollover-init Job"

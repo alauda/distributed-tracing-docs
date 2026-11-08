@@ -137,6 +137,57 @@ Jaeger never creates a lifecycle policy. `jaeger-es-rollover init` only verifies
 
 Once ISM manages the indices, rollover and retention are automatic, and no `rollover`, `lookback`, or `index-cleaner` cron job is required.
 
+### Restricting the Dependencies and Sampling Templates \{#restricting-the-dependencies-and-sampling-templates}
+
+On OpenSearch, `jaeger-es-rollover init` creates the `span` and `service` index templates with patterns that include `INDEX_PREFIX`, but the `dependencies` and `sampling` templates with the patterns `*jaeger-dependencies-*` and `*jaeger-sampling-*`, which ignore it. When several Jaeger instances with different index prefixes use the same OpenSearch instance, every new `dependencies` or `sampling` index matches the templates of all these instances, which share the order `0`:
+
+- The index joins the read aliases of the other instances, so those instances read its data.
+- Its `index.plugins.index_state_management.rollover_alias` setting comes from any one of the matching templates. When the setting names the write alias of another instance, ISM fails on the index with `Missing alias or not the write index when rollover`, and the index is neither rolled over nor deleted.
+
+Elasticsearch 8.x is not affected, because Jaeger creates composable index templates there, whose patterns include the prefix.
+
+The installation guide restricts the two templates right after the initialization. For one instance, the following commands change the pattern of its `dependencies` and `sampling` templates to `<prefix>-jaeger-<type>-*` and raise their order to `1`, so that the rollover alias of the instance takes precedence over unrestricted templates of other instances. They then reset the rollover alias of the existing indices of the instance and remove the aliases of other instances from them. The commands require `jq`:
+
+```bash
+for TYPE in dependencies sampling; do
+  TEMPLATE="${JAEGER_ES_INDEX_PREFIX}-jaeger-${TYPE}"
+  # Match only the indices of this prefix, and take precedence over the unrestricted templates of other instances
+  curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" "${OPENSEARCH_ENDPOINT}/_template/${TEMPLATE}" \
+    | jq --arg t "${TEMPLATE}" '.[$t] | .index_patterns = [$t + "-*"] | .order = 1' \
+    | curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X PUT "${OPENSEARCH_ENDPOINT}/_template/${TEMPLATE}" \
+        -H 'Content-Type: application/json' --data-binary @-
+  echo
+  # Repair the indices that the templates of other instances already matched
+  for INDEX in $(curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" "${OPENSEARCH_ENDPOINT}/_cat/indices/${TEMPLATE}-0*?h=index"); do
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X PUT "${OPENSEARCH_ENDPOINT}/${INDEX}/_settings" \
+      -H 'Content-Type: application/json' \
+      -d "{\"index.plugins.index_state_management.rollover_alias\": \"${TEMPLATE}-write\"}"
+    echo
+    for ALIAS in $(curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" "${OPENSEARCH_ENDPOINT}/${INDEX}/_alias" \
+        | jq -r --arg t "${TEMPLATE}" '.[].aliases | keys[] | select(. != $t + "-read" and . != $t + "-write")'); do
+      curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X DELETE "${OPENSEARCH_ENDPOINT}/${INDEX}/_alias/${ALIAS}"
+      echo
+    done
+  done
+done
+```
+
+To repair a running deployment, run these commands once for every Jaeger instance that uses the OpenSearch instance, with `JAEGER_ES_INDEX_PREFIX` set to the index prefix of that instance. Then retry the ISM actions that have failed on its indices:
+
+```bash
+for TYPE in dependencies sampling; do
+  curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X POST \
+    "${OPENSEARCH_ENDPOINT}/_plugins/_ism/retry/${JAEGER_ES_INDEX_PREFIX}-jaeger-${TYPE}-0*"
+  echo
+done
+```
+
+Until every instance is repaired, the unrestricted templates of the remaining instances keep adding their read aliases to the indices that each rollover creates.
+
+:::warning
+`jaeger-es-rollover init` recreates the two templates with the unrestricted patterns whenever it runs, for example during an upgrade. Restrict them again afterwards.
+:::
+
 ### Updating an ISM Policy \{#updating-an-ism-policy}
 
 Changing the retention or the rollover conditions of a running deployment takes two steps.
