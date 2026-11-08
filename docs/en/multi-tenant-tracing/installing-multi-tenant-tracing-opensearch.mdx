@@ -417,7 +417,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     ISM discovers new indices with a background sweep, so `policy_id` can remain `null` for several minutes. If it is still `null` afterwards, the `ism_template` patterns of the policy do not match the created index names. Correct the policy and attach it manually with `POST _plugins/_ism/add/<index>`.
     :::
 
-    Restrict the `dependencies` and `sampling` index templates to the index prefix. The initialization creates them with the index patterns `*jaeger-dependencies-*` and `*jaeger-sampling-*`, which also match the indices of other Jaeger instances that use the same OpenSearch instance. Matching indices join the read aliases of the other instances and can receive the rollover alias of another instance, so that ISM fails on them with `Missing alias or not the write index when rollover`. The commands below restrict the patterns to the prefix, raise the order of the two templates to `1` so that their rollover alias takes precedence, and repair the indices that the initialization has already created:
+    Restrict the `dependencies` and `sampling` index templates to the index prefix. The initialization creates them with the index patterns `*jaeger-dependencies-*` and `*jaeger-sampling-*`, which also match the indices of other Jaeger instances that use the same OpenSearch instance. The commands below require `jq`:
 
     ```bash {name=install-mt-tracing-opensearch:restrict-index-templates}
     for TYPE in dependencies sampling; do
