@@ -425,13 +425,18 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
 8. Create a Secret with the CA certificate of the platform. The gateway sends user credentials to the platform to authenticate them, and uses this CA certificate to verify the platform certificate.
 
-    1. Run the following command **in the `global` cluster** to save the CA certificate that issued the platform certificate to `platform-ca.crt`:
+    1. Run the following commands **in the `global` cluster** to save the CA certificate that issued the platform certificate to `platform-ca.crt`:
 
         ```bash {name=install-mt-tracing-opensearch:export-platform-ca}
         kubectl -n cpaas-system get secret dex.tls -o jsonpath='{.data.ca\.crt}' | base64 -d > platform-ca.crt
+        grep -q 'BEGIN CERTIFICATE' platform-ca.crt && echo "saved platform-ca.crt" || echo "dex.tls has no ca.crt"
         ```
 
-        If the platform uses a custom certificate, save the CA certificate that issued it to `platform-ca.crt` instead.
+        The commands print `saved platform-ca.crt`. If they print `dex.tls has no ca.crt` instead, the Secret was not issued by the built-in CA of the platform, for example because the platform uses a custom certificate. In this case, and whenever the platform uses a custom certificate, save the CA certificate that issued the platform certificate to `platform-ca.crt` instead.
+
+        :::note
+        Do not fall back to the `tls.crt` key of `dex.tls`. It holds the certificate of the dex service, not the certificate that the platform address presents to browsers and to the gateway, so it cannot verify the platform certificate.
+        :::
 
         :::warning
         Do not use the `cpaas-ca` Secret of the target cluster. It belongs to a different CA, which cannot verify the platform certificate.
