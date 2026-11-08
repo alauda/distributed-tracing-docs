@@ -371,8 +371,45 @@ Perform this step before updating the Jaeger configuration. Jaeger writes throug
     The initialization also updates the index templates, which Jaeger v2.20.0 needs for the additional span fields it writes, such as `scopeTags` and `references.traceState`.
 
     :::warning
-    Do not restart the Jaeger instance between this step and [step 5](#updating-jaeger). It still runs the v2.0 configuration, in which `create_mappings` defaults to `true`, so on startup it recreates the index templates and drops the read alias and the ISM rollover alias that this step has just written. Writes keep succeeding, so the loss is only noticed at the first rollover. If the instance does restart, re-run this Job afterwards to restore the templates.
+    Do not restart the Jaeger instance between this step and [step 5](#updating-jaeger). It still runs the v2.0 configuration, in which `create_mappings` defaults to `true`, so on startup it recreates the index templates and drops the read alias and the ISM rollover alias that this step has just written. Writes keep succeeding, so the loss is only noticed at the first rollover. If the instance does restart, re-run this Job and the commands below afterwards to restore the templates.
     :::
+
+    Restrict the `dependencies` and `sampling` index templates to the index prefix. The initialization creates them with the index patterns `*jaeger-dependencies-*` and `*jaeger-sampling-*`, which also match the indices of other Jaeger instances that use the same OpenSearch instance. See [Restricting the Dependencies and Sampling Templates](../configuration/storage-backends/opensearch.mdx#restricting-the-dependencies-and-sampling-templates) for the effects. The commands below require `jq`:
+
+    ```bash {name=upgrade-tracing-opensearch:restrict-index-templates}
+    for TYPE in dependencies sampling; do
+      TEMPLATE="${JAEGER_ES_INDEX_PREFIX}-jaeger-${TYPE}"
+      # Match only the indices of this prefix, and take precedence over the unrestricted templates of other instances
+      curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" "${OPENSEARCH_ENDPOINT}/_template/${TEMPLATE}" \
+        | jq --arg t "${TEMPLATE}" '.[$t] | .index_patterns = [$t + "-*"] | .order = 1' \
+        | curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X PUT "${OPENSEARCH_ENDPOINT}/_template/${TEMPLATE}" \
+            -H 'Content-Type: application/json' --data-binary @-
+      echo
+      # Repair the indices that the templates of other instances already matched
+      for INDEX in $(curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" "${OPENSEARCH_ENDPOINT}/_cat/indices/${TEMPLATE}-0*?h=index"); do
+        curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X PUT "${OPENSEARCH_ENDPOINT}/${INDEX}/_settings" \
+          -H 'Content-Type: application/json' \
+          -d "{\"index.plugins.index_state_management.rollover_alias\": \"${TEMPLATE}-write\"}"
+        echo
+        for ALIAS in $(curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" "${OPENSEARCH_ENDPOINT}/${INDEX}/_alias" \
+            | jq -r --arg t "${TEMPLATE}" '.[].aliases | keys[] | select(. != $t + "-read" and . != $t + "-write")'); do
+          curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X DELETE "${OPENSEARCH_ENDPOINT}/${INDEX}/_alias/${ALIAS}"
+          echo
+        done
+      done
+    done
+    ```
+
+    Verify the index templates and the aliases of the `dependencies` and `sampling` indices:
+
+    ```bash {name=upgrade-tracing-opensearch:verify-index-templates}
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+      "${OPENSEARCH_ENDPOINT}/_cat/templates/${JAEGER_ES_INDEX_PREFIX}-jaeger-*?v&h=name,index_patterns,order"
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+      "${OPENSEARCH_ENDPOINT}/${JAEGER_ES_INDEX_PREFIX}-jaeger-dependencies-0*,${JAEGER_ES_INDEX_PREFIX}-jaeger-sampling-0*/_alias?pretty"
+    ```
+
+    The `dependencies` and `sampling` templates list only `${JAEGER_ES_INDEX_PREFIX}-jaeger-dependencies-*` and `${JAEGER_ES_INDEX_PREFIX}-jaeger-sampling-*` with order `1`, and each index carries only the `-read` and `-write` aliases of its own type and prefix.
 
 3. Attach the existing date-suffixed indices to the read alias. After the switch, Jaeger resolves reads through the read alias only, so indices that are not attached become invisible to the Jaeger UI:
 

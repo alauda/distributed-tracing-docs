@@ -26,8 +26,33 @@ source "$(dirname "${BASH_SOURCE[0]}")/_upgrade-common.sh"
 RUNME_PREFIX="upgrade-tracing-opensearch"
 RUNME_PREFIX_SPM="upgrade-tracing-opensearch-spm"
 
+# 断言 dependencies / sampling 模板已限定到本前缀（index_patterns 为 <前缀>-jaeger-<类型>-*、order 为 1），
+# 且这两类 -0* 索引上只有本前缀本类型的 read / write alias（文档 verify-index-templates 只打印，断言在此）。
+# 共用一个 OpenSearch 的多个实例互挂 alias、rollover_alias 被覆盖时，ISM 会卡在 rollover 失败。
+_verify_restricted_templates() {
+    local type template body pattern order extra
+    for type in dependencies sampling; do
+        template="${JAEGER_ES_INDEX_PREFIX}-jaeger-${type}"
+        body=$(curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" "${OPENSEARCH_ENDPOINT}/_template/${template}") || return 1
+        pattern=$(echo "$body" | jq -r --arg t "$template" '.[$t].index_patterns | join(",")')
+        order=$(echo "$body" | jq -r --arg t "$template" '.[$t].order')
+        if [ "$pattern" != "${template}-*" ] || [ "$order" != "1" ]; then
+            log_error "模板 ${template} 未限定到本前缀: index_patterns=${pattern} order=${order}"
+            return 1
+        fi
+        extra=$(curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" "${OPENSEARCH_ENDPOINT}/${template}-0*/_alias" \
+            | jq -r --arg t "$template" '[.[].aliases | keys[] | select(. != $t + "-read" and . != $t + "-write")] | unique | join(",")')
+        if [ -n "$extra" ]; then
+            log_error "${template} 的索引上还挂着其他实例的 alias: ${extra}"
+            return 1
+        fi
+    done
+    log_success "dependencies / sampling 模板已限定到前缀 ${JAEGER_ES_INDEX_PREFIX}"
+    return 0
+}
+
 # 文档「Migrating Index Management to ISM」：建 ISM policy → 跑 jaeger-es-rollover init
-# → 把历史日期索引挂进 read alias。
+# → 限定 dependencies / sampling 索引模板的前缀 → 把历史日期索引挂进 read alias。
 #
 # 两处补充的辅助逻辑：
 #   - policy 先删后建：文档写的是 policy 尚不存在的升级场景，对已存在的 policy 直接 PUT
@@ -50,6 +75,17 @@ _upgrade_os_migrate_to_ism() {
         log_error "运行 jaeger-es-rollover init 失败"
         return 1
     }
+
+    log_info "限定 dependencies / sampling 索引模板的前缀 (${RUNME_PREFIX}:restrict-index-templates)"
+    _upgrade_run_block "${RUNME_PREFIX}:restrict-index-templates" || {
+        log_error "限定索引模板失败"
+        return 1
+    }
+    _upgrade_run_block "${RUNME_PREFIX}:verify-index-templates" || {
+        log_error "查询索引模板失败"
+        return 1
+    }
+    _verify_restricted_templates || return 1
 
     # 代码块内是四类索引各发一次 _aliases 请求，curl 不带 -f，
     # 因此 dependencies / sampling 常见的 404 index_not_found_exception 不会让返回码非 0
