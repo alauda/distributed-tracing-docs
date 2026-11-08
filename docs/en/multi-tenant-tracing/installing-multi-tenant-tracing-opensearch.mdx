@@ -417,6 +417,43 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     ISM discovers new indices with a background sweep, so `policy_id` can remain `null` for several minutes. If it is still `null` afterwards, the `ism_template` patterns of the policy do not match the created index names. Correct the policy and attach it manually with `POST _plugins/_ism/add/<index>`.
     :::
 
+    Restrict the `dependencies` and `sampling` index templates to the index prefix. The initialization creates them with the index patterns `*jaeger-dependencies-*` and `*jaeger-sampling-*`, which also match the indices of other Jaeger instances that use the same OpenSearch instance. Matching indices join the read aliases of the other instances and can receive the rollover alias of another instance, so that ISM fails on them with `Missing alias or not the write index when rollover`. The commands below restrict the patterns to the prefix, raise the order of the two templates to `1` so that their rollover alias takes precedence, and repair the indices that the initialization has already created:
+
+    ```bash {name=install-mt-tracing-opensearch:restrict-index-templates}
+    for TYPE in dependencies sampling; do
+      TEMPLATE="${JAEGER_ES_INDEX_PREFIX}-jaeger-${TYPE}"
+      # Match only the indices of this prefix, and take precedence over the unrestricted templates of other instances
+      curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" "${OPENSEARCH_ENDPOINT}/_template/${TEMPLATE}" \
+        | jq --arg t "${TEMPLATE}" '.[$t] | .index_patterns = [$t + "-*"] | .order = 1' \
+        | curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X PUT "${OPENSEARCH_ENDPOINT}/_template/${TEMPLATE}" \
+            -H 'Content-Type: application/json' --data-binary @-
+      echo
+      # Repair the indices that the templates of other instances already matched
+      for INDEX in $(curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" "${OPENSEARCH_ENDPOINT}/_cat/indices/${TEMPLATE}-0*?h=index"); do
+        curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X PUT "${OPENSEARCH_ENDPOINT}/${INDEX}/_settings" \
+          -H 'Content-Type: application/json' \
+          -d "{\"index.plugins.index_state_management.rollover_alias\": \"${TEMPLATE}-write\"}"
+        echo
+        for ALIAS in $(curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" "${OPENSEARCH_ENDPOINT}/${INDEX}/_alias" \
+            | jq -r --arg t "${TEMPLATE}" '.[].aliases | keys[] | select(. != $t + "-read" and . != $t + "-write")'); do
+          curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" -X DELETE "${OPENSEARCH_ENDPOINT}/${INDEX}/_alias/${ALIAS}"
+          echo
+        done
+      done
+    done
+    ```
+
+    Verify the index templates and the aliases of the `dependencies` and `sampling` indices:
+
+    ```bash {name=install-mt-tracing-opensearch:verify-index-templates}
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+      "${OPENSEARCH_ENDPOINT}/_cat/templates/${JAEGER_ES_INDEX_PREFIX}-jaeger-*?v&h=name,index_patterns,order"
+    curl -k -sS -u "${OPENSEARCH_USER}:${OPENSEARCH_PASS}" \
+      "${OPENSEARCH_ENDPOINT}/${JAEGER_ES_INDEX_PREFIX}-jaeger-dependencies-0*,${JAEGER_ES_INDEX_PREFIX}-jaeger-sampling-0*/_alias?pretty"
+    ```
+
+    The `dependencies` and `sampling` templates list only `${JAEGER_ES_INDEX_PREFIX}-jaeger-dependencies-*` and `${JAEGER_ES_INDEX_PREFIX}-jaeger-sampling-*` with order `1`, and each index carries only the `-read` and `-write` aliases of its own type and prefix.
+
 7. Clean up the initialization Job after it completes:
 
     ```bash {name=install-mt-tracing-opensearch:delete-rollover-init-job}
