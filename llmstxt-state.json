@@ -3,7 +3,7 @@
   "generator_version": 3,
   "project_name": "Alauda Container Platform Distributed Tracing",
   "summary": "Documentation for Alauda Container Platform Distributed Tracing, a Jaeger v2-based tracing solution integrated with OpenTelemetry and Elasticsearch on Kubernetes.",
-  "generated_at": "2026-11-11T02:53:35Z",
+  "generated_at": "2026-11-11T08:49:54Z",
   "include_patterns": [
     "**/*.md",
     "**/*.mdx"
@@ -103,11 +103,11 @@
       "updated_at": "2026-05-16T07:49:30Z"
     },
     "docs/en/architecture.mdx": {
-      "sha256": "6ca96f3a85202b331824fec3d3a759e7d9e506a152b8d31e8293268cf6b56c45",
-      "size": 9151,
+      "sha256": "d1d55041c952af93832120d293003e7a523a06c85e2b87ed1667bfd110d0c0c5",
+      "size": 9161,
       "description": "Architecture reference for Alauda Container Platform Distributed Tracing based on Jaeger v2 and Alauda Container Platform Application Observability with Elasticsearch storage. Explains the Jaeger binary's role-based deployments (`collector`, `query`, `es-rollover`), the direct-to-storage data path, and optional placement of an OpenTelemetry Collector in front of Jaeger as a sidecar or remote cluster (including Remote Sampling protocol support). Enumerates the OpenTelemetry Collector components shipped in the Jaeger binary: receivers (OTLP, Jaeger, Kafka, Zipkin, No-op), processors (Batch, Tail Sampling, Memory Limiter, Attributes, Filter), exporters (OTLP, OTLP HTTP, Kafka, Prometheus, Debug, No-op), Span Metrics and Forward connectors, and Health Check v2/zPages/pprof extensions, plus Jaeger-specific extensions like Jaeger Storage Extension, Jaeger Storage Exporter, Jaeger Query Extension, Adaptive Sampling Processor, and Remote Sampling Extension.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-11-11T02:53:35Z"
+      "updated_at": "2026-11-11T08:49:54Z"
     },
     "docs/en/configuration/index.mdx": {
       "sha256": "d27e9761748c4c4d7dfc155638d79aec99551946a686bb3416aad171ceb0c476",

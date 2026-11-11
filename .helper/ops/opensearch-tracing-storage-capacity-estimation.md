@@ -1,6 +1,6 @@
 # OTel 应用调用链存储到 OpenSearch 的每日容量评估
 
-> 适用对象：使用 `docs/en/installing/installing-distributed-tracing-opensearch.mdx`（对应测试脚本 `runme-test_installing-distributed-tracing-opensearch.sh`）部署 **Alauda Distributed Tracing**、以 **OpenSearch** 作为 Jaeger 后端存储的客户。
+> 适用对象：使用 `docs/en/installing/installing-distributed-tracing-opensearch.mdx`（对应测试脚本 `runme-test_installing-distributed-tracing-opensearch.sh`）部署 **Alauda Container Platform Distributed Tracing**、以 **OpenSearch** 作为 Jaeger 后端存储的客户。
 >
 > 目标：给出「OTel 应用每日产生的调用链，存储到 OpenSearch 所需容量」的评估方法、实测单位成本与估算公式，供客户按自身 QPS / 服务数 / 调用链规模换算磁盘需求。
 
@@ -8,7 +8,7 @@
 
 ## 一、结论速览（TL;DR）
 
-基于真实环境实测（Alauda Build of Jaeger v2 + OpenSearch 3.3.1，索引 `5 shards / 1 replica`）：
+基于真实环境实测（Alauda Container Platform Distributed Tracing + OpenSearch 3.3.1，索引 `5 shards / 1 replica`）：
 
 | 单位 | 主分片（逻辑数据） | 含 1 副本（实际磁盘） |
 |---|---|---|
@@ -48,7 +48,7 @@
 | 项目 | 值 |
 |---|---|
 | 存储后端 | OpenSearch **3.3.1**（Lucene 10.3.1），3 个数据节点，集群健康 green |
-| 追踪组件 | Alauda Build of Jaeger v2（`jaeger:2.16.0-r2`）+ OpenTelemetry Collector `0.147.0` |
+| 追踪组件 | Alauda Container Platform Distributed Tracing（`jaeger:2.16.0-r2`）+ OpenTelemetry Collector `0.147.0` |
 | Span 索引 | `acp-business-1-jaeger-span-<yyyy-MM-dd>`，每日一个索引 |
 | 索引分片 | **shards = 5，replicas = 1**（默认） |
 | 数据保留 | `JAEGER_INDEX_RETENTION_DAYS` = **7 天**（由 `jaeger-es-index-cleaner` CronJob 每日 `30 2 * * *` 删除 7 天前索引，实测 args=`["7", ...]`） |
