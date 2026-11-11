@@ -2,13 +2,13 @@
 weight: 10
 ---
 
-# Installing Alauda Distributed Tracing with OpenSearch
+# Installing Alauda Container Platform Distributed Tracing with OpenSearch
 
-Installing the Alauda Distributed Tracing platform involves the following steps:
+Installing the Alauda Container Platform Distributed Tracing platform involves the following steps:
 
-1. Installing the Alauda Build of Jaeger v2 cluster plugin
-2. Installing the Alauda Build of OpenTelemetry v2 Operator
-3. Deploying the Alauda Build of Jaeger v2
+1. Installing the Alauda Container Platform Distributed Tracing cluster plugin
+2. Installing the Alauda Container Platform Application Observability Operator
+3. Deploying Jaeger
 4. Deploying the OpenTelemetry Collector to forward traces to Jaeger
 
 :::note
@@ -20,9 +20,9 @@ Starting in ACP 4.5, the following plugins have new names:
 Search for the new names when you download the plugins from the Customer Portal. A plugin package published before the rename still shows the former name in the platform after you upload it.
 :::
 
-## Installing the Alauda Build of Jaeger v2 Cluster Plugin \{#installing-the-alauda-build-of-jaeger-v2-cluster-plugin}
+## Installing the Alauda Container Platform Distributed Tracing Cluster Plugin \{#installing-the-alauda-build-of-jaeger-v2-cluster-plugin}
 
-The Alauda Build of Jaeger v2 cluster plugin ships the container images required by the tracing components: Jaeger (`jaeger`, `jaeger-es-rollover`, `jaeger-es-index-cleaner`) and OAuth2 Proxy. Installing the plugin synchronizes these images to the platform's built-in registry and creates a ConfigMap named `jaeger-cluster-plugin-manifest` in the `cpaas-system` namespace of the target cluster. Later steps read the image addresses from this ConfigMap.
+The Alauda Container Platform Distributed Tracing cluster plugin ships the container images required by the tracing components: Jaeger (`jaeger`, `jaeger-es-rollover`, `jaeger-es-index-cleaner`) and OAuth2 Proxy. Installing the plugin synchronizes these images to the platform's built-in registry and creates a ConfigMap named `jaeger-cluster-plugin-manifest` in the `cpaas-system` namespace of the target cluster. Later steps read the image addresses from this ConfigMap.
 
 ### Installing via the web console
 
@@ -79,21 +79,21 @@ Cluster plugins are installed by creating a `ModuleInfo` resource **in the `glob
     kubectl get configmap jaeger-cluster-plugin-manifest -n cpaas-system
     ```
 
-## Installing the Alauda Build of OpenTelemetry v2 Operator \{#installing-the-alauda-build-of-opentelemetry-v2-operator}
+## Installing the Alauda Container Platform Application Observability Operator \{#installing-the-alauda-build-of-opentelemetry-v2-operator}
 
-The Alauda Build of OpenTelemetry v2 Operator manages the lifecycle of Jaeger v2 and OpenTelemetry Collector instances. You must install this Operator before deploying any tracing components.
+The Alauda Container Platform Application Observability Operator manages the lifecycle of Jaeger v2 and OpenTelemetry Collector instances. You must install this Operator before deploying any tracing components.
 
 ### Installing via the web console
 
-Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/installing/install-opentelemetry.html#installing-via-the-web-console" children="Installing via the web console" /> section of the Alauda Build of OpenTelemetry v2 documentation.
+Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/installing/install-opentelemetry.html#installing-via-the-web-console" children="Installing via the web console" /> section of the Alauda Container Platform Application Observability documentation.
 
 ### Installing via the CLI
 
-Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/installing/install-opentelemetry.html#installing-via-the-cli" children="Installing via the CLI" /> section of the Alauda Build of OpenTelemetry v2 documentation.
+Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/installing/install-opentelemetry.html#installing-via-the-cli" children="Installing via the CLI" /> section of the Alauda Container Platform Application Observability documentation.
 
-## Deploying the Alauda Build of Jaeger v2 \{#deploying-the-alauda-build-of-jaeger-v2}
+## Deploying Jaeger \{#deploying-the-alauda-build-of-jaeger-v2}
 
-Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by the Alauda Build of OpenTelemetry v2 Operator. It uses a [backend storage](../configuration/storage-backends/index.mdx) and integrates with the Alauda Container Platform authentication system through an OAuth2 Proxy sidecar.
+Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by the Alauda Container Platform Application Observability Operator. It uses a [backend storage](../configuration/storage-backends/index.mdx) and integrates with the Alauda Container Platform authentication system through an OAuth2 Proxy sidecar.
 
 **Prerequisites**
 
@@ -114,7 +114,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
     Replace the placeholder values with your actual OpenSearch credentials.
 
-2. Retrieve platform configuration from the cluster and the Jaeger-related container images from the ConfigMap created by the Alauda Build of Jaeger v2 cluster plugin:
+2. Retrieve platform configuration from the cluster and the Jaeger-related container images from the ConfigMap created by the Alauda Container Platform Distributed Tracing cluster plugin:
 
     ```bash {name=install-tracing-opensearch:get-platform-config}
     export PLATFORM_URL=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.platformURL}')
@@ -939,4 +939,4 @@ Once traces are generated, navigate to the **Monitor** tab in the Jaeger UI to v
 
 ## Uninstalling
 
-To remove the Alauda Distributed Tracing components from your cluster, follow [Uninstalling Alauda Distributed Tracing](../uninstalling/uninstalling-distributed-tracing.mdx).
+To remove the Alauda Container Platform Distributed Tracing components from your cluster, follow [Uninstalling Alauda Container Platform Distributed Tracing](../uninstalling/uninstalling-distributed-tracing.mdx).

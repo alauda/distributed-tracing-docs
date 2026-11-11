@@ -2,15 +2,15 @@
 weight: 20
 ---
 
-# Upgrading Alauda Distributed Tracing with OpenSearch
+# Upgrading Alauda Container Platform Distributed Tracing with OpenSearch
 
-Upgrading an OpenSearch-backed deployment from v2.0 (Jaeger 2.16.0, Alauda Build of OpenTelemetry v2 Operator 0.147.0) to v2.1 (Jaeger 2.20.0, Operator 0.157.0) involves the following steps:
+Upgrading an OpenSearch-backed deployment from v2.0 (Jaeger 2.16.0, Alauda Container Platform Application Observability Operator 0.147.0) to v2.1 (Jaeger 2.20.0, Operator 0.157.0) involves the following steps:
 
-1. Installing the Alauda Build of Jaeger v2 cluster plugin
-2. Upgrading the Alauda Build of OpenTelemetry v2 Operator
+1. Installing the Alauda Container Platform Distributed Tracing cluster plugin
+2. Upgrading the Alauda Container Platform Application Observability Operator
 3. Updating the OpenTelemetry Collector
 4. Migrating index management to ISM
-5. Updating the Alauda Build of Jaeger v2
+5. Updating Jaeger
 6. Retiring the index cleaner
 
 :::warning
@@ -21,7 +21,7 @@ Existing indices are neither renamed nor reindexed, but Jaeger reads them only t
 
 **Prerequisites**
 
-- An Alauda Distributed Tracing v2.0 deployment installed as described in [Installing Alauda Distributed Tracing with OpenSearch](../installing/installing-distributed-tracing-opensearch.mdx).
+- An Alauda Container Platform Distributed Tracing v2.0 deployment installed as described in [Installing Alauda Container Platform Distributed Tracing with OpenSearch](../installing/installing-distributed-tracing-opensearch.mdx).
 - The **Alauda Container Platform Distributed Tracing** (previously **Alauda Build of Jaeger v2**) cluster plugin and the **Alauda Container Platform Application Observability** (previously **Alauda Build of OpenTelemetry v2**) Operator 0.157.0 are published to the platform.
 - An active ACP CLI (`kubectl`) session by a cluster administrator with the `cluster-admin` role, for both the target cluster and the `global` cluster.
 - Review the [Upgrade Notes](../about/release-notes/v2-1-0.mdx#upgrade-notes) for the behavior changes introduced by this release.
@@ -50,9 +50,9 @@ export OPENSEARCH_PASS=$(kubectl -n${JAEGER_NS} get secret opensearch-credential
 export JAEGER_MAX_TRACE_DURATION="1h"
 ```
 
-## Installing the Alauda Build of Jaeger v2 Cluster Plugin \{#installing-the-cluster-plugin}
+## Installing the Alauda Container Platform Distributed Tracing Cluster Plugin \{#installing-the-cluster-plugin}
 
-Starting with v2.1, the container images of the tracing components are delivered by the Alauda Build of Jaeger v2 cluster plugin instead of the Operator bundle. Installing the plugin synchronizes the images to the platform's built-in registry and creates the `jaeger-cluster-plugin-manifest` ConfigMap in the `cpaas-system` namespace of the target cluster. The remaining steps read the image addresses from that ConfigMap.
+Starting with v2.1, the container images of the tracing components are delivered by the Alauda Container Platform Distributed Tracing cluster plugin instead of the Operator bundle. Installing the plugin synchronizes the images to the platform's built-in registry and creates the `jaeger-cluster-plugin-manifest` ConfigMap in the `cpaas-system` namespace of the target cluster. The remaining steps read the image addresses from that ConfigMap.
 
 ### Installing via the web console
 
@@ -113,7 +113,7 @@ echo "${JAEGER_ES_ROLLOVER_IMAGE}"
 echo "${JOAUTH2_PROXY_IMAGE}"
 ```
 
-## Upgrading the Alauda Build of OpenTelemetry v2 Operator \{#upgrading-the-operator}
+## Upgrading the Alauda Container Platform Application Observability Operator \{#upgrading-the-operator}
 
 The Operator is subscribed with the `Manual` approval strategy, so the upgrade must be approved explicitly. For general background on Operator upgrades, see <ExternalSiteLink name="acp" href="/extend/operator.html" children="Operator" />.
 
@@ -152,7 +152,7 @@ Choose one of the following methods:
 
     ```text {name=upgrade-tracing-opensearch:verify-operator-csv-output}
     NAME                                  DISPLAY                            VERSION      REPLACES                              PHASE
-    opentelemetry-operator2.v0.157.0-r1   Alauda Build of OpenTelemetry v2   0.157.0-r1   opentelemetry-operator2.v0.147.0-r0   Succeeded
+    opentelemetry-operator2.v0.157.0-r1   Alauda Container Platform Application Observability   0.157.0-r1   opentelemetry-operator2.v0.147.0-r0   Succeeded
     ```
 
 :::note
@@ -391,7 +391,7 @@ Perform this step before updating the Jaeger configuration. Jaeger writes throug
     Under alias-based rotation, Jaeger no longer limits queries by `max_span_age`, so trace lookups and the service and operation lists scan every index attached to the read alias. Attach only the indices whose traces you still need. They are removed from the alias automatically when the index cleaner deletes them in [step 6](#retiring-the-index-cleaner).
     :::
 
-## Updating the Alauda Build of Jaeger v2 \{#updating-jaeger}
+## Updating Jaeger \{#updating-jaeger}
 
 **Procedure**
 

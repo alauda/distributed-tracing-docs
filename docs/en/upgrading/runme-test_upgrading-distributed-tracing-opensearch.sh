@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Alauda Distributed Tracing v2.0 → v2.1 升级文档测试脚本（OpenSearch 后端）
+# Alauda Container Platform Distributed Tracing v2.0 → v2.1 升级文档测试脚本（OpenSearch 后端）
 # 对应文档: docs/en/upgrading/upgrading-distributed-tracing-opensearch.mdx
-# 覆盖范围: 「Installing the Alauda Build of Jaeger v2 Cluster Plugin」（仅 CLI 方案）、
-#           「Upgrading the Alauda Build of OpenTelemetry v2 Operator」（仅 CLI 方案）、
+# 覆盖范围: 「Installing the Alauda Container Platform Distributed Tracing Cluster Plugin」（仅 CLI 方案）、
+#           「Upgrading the Alauda Container Platform Application Observability Operator」（仅 CLI 方案）、
 #           「Updating the OpenTelemetry Collector」「Migrating Index Management to ISM」
-#           「Updating the Alauda Build of Jaeger v2」「Retiring the Index Cleaner」
+#           「Updating Jaeger」「Retiring the Index Cleaner」
 #           「Verification」及两段 (Optional) SPM 章节；web console 方案为 UI 操作不可自动化。
 # 前置条件: 环境上存在一套 **v2.0**（Jaeger 2.16.0 + Operator 0.147.0、按天日期索引）的
 #           OpenSearch 部署。不满足时门槛检测以 SKIPPED 退出，不判红（见 _upgrade_precheck）。
@@ -67,7 +67,7 @@ _upgrade_os_migrate_to_ism() {
     return 0
 }
 
-# 文档「Updating the Alauda Build of Jaeger v2」：
+# 文档「Updating Jaeger」：
 #   1. 先把镜像与配置一次性 patch 下去（含 create_mappings: false、
 #      date_layout / rollover_frequency 置 null）。
 #   2. 再单独换 oauth2-proxy sidecar 镜像。
@@ -88,7 +88,7 @@ _upgrade_os_jaeger() {
         return 1
     fi
 
-    log_success "Alauda Build of Jaeger v2 升级通过"
+    log_success "Alauda Container Platform Distributed Tracing 升级通过"
     return 0
 }
 
@@ -167,7 +167,7 @@ _upgrade_os_verify_storage() {
 # 测试函数：分布式调用链 v2.0 → v2.1 升级（OpenSearch）
 test_upgrading_distributed_tracing_opensearch() {
     log_info "=========================================="
-    log_info "开始 Alauda Distributed Tracing 升级测试 (OpenSearch)"
+    log_info "开始 Alauda Container Platform Distributed Tracing 升级测试 (OpenSearch)"
     log_info "=========================================="
 
     # 步骤 0: 门槛——必须是一套 OpenSearch 后端的 v2.0 部署
@@ -187,15 +187,15 @@ test_upgrading_distributed_tracing_opensearch() {
     _upgrade_set_vars "$RUNME_PREFIX" \
         OPENSEARCH_ENDPOINT JAEGER_ES_INDEX_PREFIX OPENSEARCH_USER OPENSEARCH_PASS || return 1
 
-    # 步骤 2: 安装 Alauda Build of Jaeger v2 集群插件（CLI 方式，经 Global 集群）
-    log_info "步骤 2: 安装 Alauda Build of Jaeger v2 集群插件"
+    # 步骤 2: 安装 Alauda Container Platform Distributed Tracing 集群插件（CLI 方式，经 Global 集群）
+    log_info "步骤 2: 安装 Alauda Container Platform Distributed Tracing 集群插件"
     _upgrade_install_plugin "$RUNME_PREFIX" || return 1
 
     # 步骤 3: 读取插件下发的镜像地址
     log_info "步骤 3: 读取插件下发的镜像地址"
     _upgrade_get_plugin_images "$RUNME_PREFIX" || return 1
 
-    # 步骤 4: 升级 Alauda Build of OpenTelemetry v2 Operator
+    # 步骤 4: 升级 Alauda Container Platform Application Observability Operator
     log_info "步骤 4: 升级 OpenTelemetry v2 Operator"
     _upgrade_operator "$RUNME_PREFIX" || return 1
 
@@ -213,8 +213,8 @@ test_upgrading_distributed_tracing_opensearch() {
     log_info "步骤 7: 迁移索引管理到 ISM"
     _upgrade_os_migrate_to_ism || return 1
 
-    # 步骤 8: 更新 Alauda Build of Jaeger v2（镜像+配置一次性 patch → oauth2 镜像）
-    log_info "步骤 8: 更新 Alauda Build of Jaeger v2"
+    # 步骤 8: 更新 Alauda Container Platform Distributed Tracing（镜像+配置一次性 patch → oauth2 镜像）
+    log_info "步骤 8: 更新 Alauda Container Platform Distributed Tracing"
     _upgrade_os_jaeger || return 1
 
     # 步骤 9: (可选) SPM —— Jaeger 的 spanmetrics connector 改名为 span_metrics
@@ -236,7 +236,7 @@ test_upgrading_distributed_tracing_opensearch() {
     _upgrade_os_verify_storage || return 1
 
     log_success "=========================================="
-    log_success "Alauda Distributed Tracing 升级测试 (OpenSearch) 完成，所有验证通过！"
+    log_success "Alauda Container Platform Distributed Tracing 升级测试 (OpenSearch) 完成，所有验证通过！"
     log_success "=========================================="
     return 0
 }

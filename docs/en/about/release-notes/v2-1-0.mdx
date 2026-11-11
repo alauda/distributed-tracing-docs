@@ -2,9 +2,9 @@
 weight: 10000
 ---
 
-# Alauda Distributed Tracing v2.1.0
+# Alauda Container Platform Distributed Tracing v2.1.0
 
-Alauda Distributed Tracing v2.1.0 is delivered through Alauda Build of OpenTelemetry v2 Operator 0.157.0, integrating with the open source Jaeger 2.20.0. It provides a production-ready distributed tracing solution built on Jaeger v2, enabling teams to collect, store, and visualize traces across microservices on Alauda Container Platform.
+Alauda Container Platform Distributed Tracing v2.1.0 is delivered through Alauda Container Platform Application Observability Operator 0.157.0, integrating with the open source Jaeger 2.20.0. It provides a production-ready distributed tracing solution built on Jaeger v2, enabling teams to collect, store, and visualize traces across microservices on Alauda Container Platform.
 
 :::note
 Only the features documented on this site are supported. Undocumented features are currently unsupported. If you need assistance with a specific feature, contact Alauda support.
@@ -26,11 +26,11 @@ Only the features documented on this site are supported. Undocumented features a
 
 - **[Deployment and management](../../installing/)**: Jaeger instances are deployed and managed through the OpenTelemetry Operator on Kubernetes. Both web console and CLI installation methods are supported, along with [taints and tolerations](../../installing/taints-and-tolerations.mdx) for pod scheduling.
 
-- **Integration**: Integrates with <ExternalSiteLink name="opentelemetry" href="/" children="Alauda Build of OpenTelemetry v2" /> for telemetry collection and forwarding, with <ExternalSiteLink name="servicemesh" href="/integration/observability/kiali.html" children="Alauda Service Mesh (Kiali)" /> for opening trace data from the service mesh console, and with Alauda Container Platform for authentication through OAuth2 Proxy.
+- **Integration**: Integrates with <ExternalSiteLink name="opentelemetry" href="/" children="Alauda Container Platform Application Observability" /> for telemetry collection and forwarding, with <ExternalSiteLink name="servicemesh" href="/integration/observability/kiali.html" children="Alauda Service Mesh (Kiali)" /> for opening trace data from the service mesh console, and with Alauda Container Platform for authentication through OAuth2 Proxy.
 
 ## New Features and Enhancements
 
-- **Alauda Build of Jaeger v2 cluster plugin**: The container images required by the tracing components are now delivered by a dedicated cluster plugin. Installing the plugin synchronizes the images to the built-in registry and publishes their addresses in the `jaeger-cluster-plugin-manifest` ConfigMap, so the installation procedure reads image addresses from the cluster instead of hard-coding them. See [Installing Alauda Distributed Tracing with Elasticsearch](../../installing/installing-distributed-tracing-elasticsearch.mdx).
+- **Alauda Container Platform Distributed Tracing cluster plugin**: The container images required by the tracing components are now delivered by a dedicated cluster plugin. Installing the plugin synchronizes the images to the built-in registry and publishes their addresses in the `jaeger-cluster-plugin-manifest` ConfigMap, so the installation procedure reads image addresses from the cluster instead of hard-coding them. See [Installing Alauda Container Platform Distributed Tracing with Elasticsearch](../../installing/installing-distributed-tracing-elasticsearch.mdx).
 
 - **Horizontally scalable Service Performance Monitoring**: SPM can now be scaled out. A front OpenTelemetry Collector load-balances spans by `service` to the Jaeger tier, so that each `(service, operation)` time series is aggregated by a single writer and the RED metrics stay accurate even when both tiers run with multiple replicas. See [Service Performance Monitoring (SPM)](../../configuration/spm.mdx#configuration).
 
@@ -38,7 +38,7 @@ Only the features documented on this site are supported. Undocumented features a
 
 ## Upgrade Notes \{#upgrade-notes}
 
-This release moves from Alauda Build of OpenTelemetry v2 Operator 0.147.0 and Jaeger 2.16.0 to Operator 0.157.0 and Jaeger 2.20.0. The following changes can alter the behavior of an existing configuration. Review them before upgrading, and follow [Upgrading Alauda Distributed Tracing with Elasticsearch](../../upgrading/upgrading-distributed-tracing-elasticsearch.mdx) or [Upgrading Alauda Distributed Tracing with OpenSearch](../../upgrading/upgrading-distributed-tracing-opensearch.mdx) for the procedure.
+This release moves from Alauda Container Platform Application Observability Operator 0.147.0 and Jaeger 2.16.0 to Operator 0.157.0 and Jaeger 2.20.0. The following changes can alter the behavior of an existing configuration. Review them before upgrading, and follow [Upgrading Alauda Container Platform Distributed Tracing with Elasticsearch](../../upgrading/upgrading-distributed-tracing-elasticsearch.mdx) or [Upgrading Alauda Container Platform Distributed Tracing with OpenSearch](../../upgrading/upgrading-distributed-tracing-opensearch.mdx) for the procedure.
 
 ### Legacy Elasticsearch rotation flags are rejected
 
@@ -125,3 +125,10 @@ service:
     metrics:
       level: detailed
 ```
+
+## Changes to Upstream Jaeger \{#changes-to-upstream-jaeger}
+
+Alauda Container Platform Distributed Tracing v2.1.0 is built from Jaeger v2.20.0. No Jaeger Go source file is modified. The Alauda build changes the following:
+
+- Upgraded Go modules to fix vulnerabilities: `golang.org/x/sys` v0.46.0 → v0.47.0, `google.golang.org/grpc` v1.81.1 → v1.82.1, `golang.org/x/crypto` v0.53.0 → v0.55.0, `golang.org/x/net` v0.56.0 → v0.57.0, `golang.org/x/text` v0.38.0 → v0.41.0.
+- Adjusted the build files for the Alauda build: default base images in the Dockerfiles, the build rule of `es-rollover` and `es-index-cleaner`, and extra linker flags.

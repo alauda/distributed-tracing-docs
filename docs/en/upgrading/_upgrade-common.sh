@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Alauda Distributed Tracing v2.0 → v2.1 升级文档测试的公共逻辑。
+# Alauda Container Platform Distributed Tracing v2.0 → v2.1 升级文档测试的公共逻辑。
 #
 # 被 runme-test_upgrading-distributed-tracing-elasticsearch.sh 与
 #    runme-test_upgrading-distributed-tracing-opensearch.sh 复用。
@@ -162,7 +162,7 @@ _upgrade_set_vars() {
     return 0
 }
 
-# 文档「Installing the Alauda Build of Jaeger v2 Cluster Plugin > Installing via the CLI」：
+# 文档「Installing the Alauda Container Platform Distributed Tracing Cluster Plugin > Installing via the CLI」：
 # 3 个代码块与两篇安装文档逐字节相同，直接复用框架侧共享函数。
 # 第三参数传空——升级文档没有 verify-jaeger-plugin-configmap 代码块，
 # 镜像清单改由随后的 get-plugin-images 直接读取。
@@ -193,7 +193,7 @@ _upgrade_get_plugin_images() {
     return 0
 }
 
-# 文档「Upgrading the Alauda Build of OpenTelemetry v2 Operator > Upgrading via the CLI」：
+# 文档「Upgrading the Alauda Container Platform Application Observability Operator > Upgrading via the CLI」：
 # check-operator-versions（模式 A）→ approve-installplan（模式 A）→
 # verify-operator-csv + 其 -output（模式 I，带等待）。
 #

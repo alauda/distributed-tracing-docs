@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Alauda Distributed Tracing v2.0 → v2.1 升级文档测试脚本（Elasticsearch 后端）
+# Alauda Container Platform Distributed Tracing v2.0 → v2.1 升级文档测试脚本（Elasticsearch 后端）
 # 对应文档: docs/en/upgrading/upgrading-distributed-tracing-elasticsearch.mdx
-# 覆盖范围: 「Installing the Alauda Build of Jaeger v2 Cluster Plugin」（仅 CLI 方案）、
-#           「Upgrading the Alauda Build of OpenTelemetry v2 Operator」（仅 CLI 方案）、
+# 覆盖范围: 「Installing the Alauda Container Platform Distributed Tracing Cluster Plugin」（仅 CLI 方案）、
+#           「Upgrading the Alauda Container Platform Application Observability Operator」（仅 CLI 方案）、
 #           「Updating the OpenTelemetry Collector」「Updating the Elasticsearch Index
-#           Templates」「Updating the Alauda Build of Jaeger v2」「Verification」
+#           Templates」「Updating Jaeger」「Verification」
 #           及两段 (Optional) SPM 章节；各章节的 web console 方案为 UI 操作不可自动化。
 # 前置条件: 环境上存在一套 **v2.0**（Jaeger 2.16.0 + Operator 0.147.0）的 Elasticsearch
 #           部署。不满足时门槛检测以 SKIPPED 退出，不判红（见 _upgrade_precheck）。
@@ -53,7 +53,7 @@ _upgrade_es_index_templates() {
     return 0
 }
 
-# 文档「Updating the Alauda Build of Jaeger v2」：
+# 文档「Updating Jaeger」：
 #   1. 先单独换 oauth2-proxy sidecar 镜像（additionalContainers 是数组，merge patch
 #      会整体替换，只能用 json patch 定点改）。此刻 Jaeger 仍是 2.16.0 + 旧配置，重启安全。
 #   2. 再把镜像与配置**一次性** patch 下去——v2.20.0 拒绝 use_aliases / use_ilm，
@@ -74,14 +74,14 @@ _upgrade_es_jaeger() {
         "${RUNME_PREFIX}:apply-jaeger-patch" "jaeger-upgrade-patch.yaml" || return 1
     _upgrade_assert_jaeger_image || return 1
 
-    log_success "Alauda Build of Jaeger v2 升级通过"
+    log_success "Alauda Container Platform Distributed Tracing 升级通过"
     return 0
 }
 
 # 测试函数：分布式调用链 v2.0 → v2.1 升级（Elasticsearch）
 test_upgrading_distributed_tracing_elasticsearch() {
     log_info "=========================================="
-    log_info "开始 Alauda Distributed Tracing 升级测试 (Elasticsearch)"
+    log_info "开始 Alauda Container Platform Distributed Tracing 升级测试 (Elasticsearch)"
     log_info "=========================================="
 
     # 步骤 0: 门槛——必须是一套 Elasticsearch 后端的 v2.0 部署
@@ -100,15 +100,15 @@ test_upgrading_distributed_tracing_elasticsearch() {
     log_info "步骤 1: 设置升级环境变量"
     _upgrade_set_vars "$RUNME_PREFIX" ES_ENDPOINT JAEGER_ES_INDEX_PREFIX || return 1
 
-    # 步骤 2: 安装 Alauda Build of Jaeger v2 集群插件（CLI 方式，经 Global 集群）
-    log_info "步骤 2: 安装 Alauda Build of Jaeger v2 集群插件"
+    # 步骤 2: 安装 Alauda Container Platform Distributed Tracing 集群插件（CLI 方式，经 Global 集群）
+    log_info "步骤 2: 安装 Alauda Container Platform Distributed Tracing 集群插件"
     _upgrade_install_plugin "$RUNME_PREFIX" || return 1
 
     # 步骤 3: 读取插件下发的镜像地址
     log_info "步骤 3: 读取插件下发的镜像地址"
     _upgrade_get_plugin_images "$RUNME_PREFIX" || return 1
 
-    # 步骤 4: 升级 Alauda Build of OpenTelemetry v2 Operator
+    # 步骤 4: 升级 Alauda Container Platform Application Observability Operator
     log_info "步骤 4: 升级 OpenTelemetry v2 Operator"
     _upgrade_operator "$RUNME_PREFIX" || return 1
 
@@ -126,8 +126,8 @@ test_upgrading_distributed_tracing_elasticsearch() {
     log_info "步骤 7: 更新 Elasticsearch 索引模板"
     _upgrade_es_index_templates || return 1
 
-    # 步骤 8: 更新 Alauda Build of Jaeger v2（oauth2 镜像 → 镜像+配置一次性 patch）
-    log_info "步骤 8: 更新 Alauda Build of Jaeger v2"
+    # 步骤 8: 更新 Alauda Container Platform Distributed Tracing（oauth2 镜像 → 镜像+配置一次性 patch）
+    log_info "步骤 8: 更新 Alauda Container Platform Distributed Tracing"
     _upgrade_es_jaeger || return 1
 
     # 步骤 9: (可选) SPM —— Jaeger 的 spanmetrics connector 改名为 span_metrics
@@ -141,7 +141,7 @@ test_upgrading_distributed_tracing_elasticsearch() {
     _upgrade_verify "$RUNME_PREFIX" || return 1
 
     log_success "=========================================="
-    log_success "Alauda Distributed Tracing 升级测试 (Elasticsearch) 完成，所有验证通过！"
+    log_success "Alauda Container Platform Distributed Tracing 升级测试 (Elasticsearch) 完成，所有验证通过！"
     log_success "=========================================="
     return 0
 }
