@@ -1,6 +1,6 @@
 # distributed-tracing-docs
 
-Documentation for Alauda Distributed Tracing
+Documentation for Alauda Container Platform Distributed Tracing
 
 ## Documentation Dependencies
 

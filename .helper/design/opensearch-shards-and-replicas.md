@@ -1,6 +1,6 @@
 # OpenSearch 索引 shards（分片）与 replicas（副本）详解与最佳实践
 
-> 面向使用 **Alauda Distributed Tracing**（Jaeger v2 + OpenSearch）的读者，讲清楚 Jaeger span 索引默认 `shards: 5, replicas: 1` 两个参数**各自的作用、对存储容量的影响，以及调优最佳实践**。全文结论均结合真实环境（`business-1` 集群，OpenSearch 3.3.1，3 数据节点）实测数据。
+> 面向使用 **Alauda Container Platform Distributed Tracing**（Jaeger v2 + OpenSearch）的读者，讲清楚 Jaeger span 索引默认 `shards: 5, replicas: 1` 两个参数**各自的作用、对存储容量的影响，以及调优最佳实践**。全文结论均结合真实环境（`business-1` 集群，OpenSearch 3.3.1，3 数据节点）实测数据。
 >
 > 配置位置见本文第六章；官方调优入口：`configuration/storage-backends/opensearch.mdx#shards-and-replicas`。
 

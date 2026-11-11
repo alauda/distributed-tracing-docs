@@ -28,13 +28,13 @@ Shards and replicas are configuration values to take special attention to, becau
 
 `max_span_age` and `max_trace_duration` behave the same way as for Elasticsearch, see [Query Time Range](./elasticsearch.mdx#query-time-range).
 
-Alauda Distributed Tracing uses alias-based rotation (`rotation.auto_rollover`) on OpenSearch, so `max_span_age` is silently replaced with 50 years and retention is governed by the ISM policy alone. Only `max_trace_duration` is worth tuning: set it to the longest trace you expect, because the default of `24h` widens every query by a full day on each side.
+Alauda Container Platform Distributed Tracing uses alias-based rotation (`rotation.auto_rollover`) on OpenSearch, so `max_span_age` is silently replaced with 50 years and retention is governed by the ISM policy alone. Only `max_trace_duration` is worth tuning: set it to the longest trace you expect, because the default of `24h` widens every query by a full day on each side.
 
 ## Index Management Strategies \{#index-management-strategies}
 
 Jaeger offers the same three rotation strategies on OpenSearch as on Elasticsearch, selected with the `rotation` configuration under `indices.<type>`. See [Index Management Strategies](./elasticsearch.mdx#index-management-strategies) for the comparison table and the field reference. The only backend-specific difference is that lifecycle management is provided by the OpenSearch Index State Management (ISM) plugin instead of Elasticsearch ILM.
 
-Alauda Distributed Tracing configures `rotation.auto_rollover` on all four index types and lets an ISM policy drive rollover and deletion.
+Alauda Container Platform Distributed Tracing configures `rotation.auto_rollover` on all four index types and lets an ISM policy drive rollover and deletion.
 
 ## Index Rollover \{#index-rollover}
 
@@ -49,7 +49,7 @@ The tool detects the backend from the ping endpoint and switches the lifecycle-s
 | Rollover alias in the index template | `index.lifecycle.rollover_alias` | `index.plugins.index_state_management.rollover_alias` |
 | How a policy is attached to an index | `index.lifecycle.name`, written into the index template | `ism_template` patterns, declared inside the policy |
 
-The `jaeger-es-rollover` image address is published by the Alauda Build of Jaeger v2 cluster plugin in the `jaeger-cluster-plugin-manifest` ConfigMap, so that it always matches the deployed Jaeger version:
+The `jaeger-es-rollover` image address is published by the Alauda Container Platform Distributed Tracing cluster plugin in the `jaeger-cluster-plugin-manifest` ConfigMap, so that it always matches the deployed Jaeger version:
 
 ```bash
 export JAEGER_ES_ROLLOVER_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest -o jsonpath='{.data.jaeger-es-rollover-image}')
@@ -89,7 +89,7 @@ Jaeger never creates a lifecycle policy. `jaeger-es-rollover init` only verifies
     Restrict the `ism_template` patterns to the numbered rollover indices with a `-0*` suffix. A pattern such as `jaeger-span-*` also matches date-suffixed indices created afterwards, for example after a rollback to `rotation.periodic`. ISM then takes those indices over and fails on them, because they are not attached to a rollover alias.
     :::
 
-    A complete policy covering all four index types is shown in [Installing Alauda Distributed Tracing with OpenSearch](../../installing/installing-distributed-tracing-opensearch.mdx#deploying-the-alauda-build-of-jaeger-v2).
+    A complete policy covering all four index types is shown in [Installing Alauda Container Platform Distributed Tracing with OpenSearch](../../installing/installing-distributed-tracing-opensearch.mdx#deploying-the-alauda-build-of-jaeger-v2).
 
 2. Run the initializer with `ES_USE_ILM=true` and `ES_ILM_POLICY_NAME` set to the policy name. These variables keep their `ES_` prefix on OpenSearch:
 
@@ -166,4 +166,4 @@ Changing the retention or the rollover conditions of a running deployment takes 
 `_plugins/_ism/explain` is eventually consistent: after a policy change, and after an index is created, it can report `policy_id: null` for several minutes. The background sweep that discovers new indices runs every `plugins.index_state_management.coordinator.sweep_period` (10 minutes by default), and each managed index is then evaluated every `plugins.index_state_management.job_interval` (5 minutes by default), with jitter. Avoid minute-scale conditions when testing a policy.
 :::
 
-For deployment steps, see [Installing Alauda Distributed Tracing with OpenSearch](../../installing/installing-distributed-tracing-opensearch.mdx).
+For deployment steps, see [Installing Alauda Container Platform Distributed Tracing with OpenSearch](../../installing/installing-distributed-tracing-opensearch.mdx).

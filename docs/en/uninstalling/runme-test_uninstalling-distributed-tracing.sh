@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Alauda Distributed Tracing 卸载文档测试脚本
+# Alauda Container Platform Distributed Tracing 卸载文档测试脚本
 # 对应文档: docs/en/uninstalling/uninstalling-distributed-tracing.mdx
-# 覆盖范围: 「Uninstalling via the CLI」章节（含「(Optional) Uninstall the Alauda Build of
-#           Jaeger v2 Cluster Plugin」）；「via the web console」为 UI 操作不可自动化。
+# 覆盖范围: 「Uninstalling via the CLI」章节（含「(Optional) Uninstall the Alauda Container Platform
+#           Distributed Tracing Cluster Plugin」）；「via the web console」为 UI 操作不可自动化。
 
 set -e
 
@@ -103,7 +103,7 @@ _uninstall_jaeger_plugin_via_global() {
 # 测试函数：分布式调用链卸载
 test_uninstalling_distributed_tracing() {
     log_info "=========================================="
-    log_info "开始 Alauda Distributed Tracing 卸载测试"
+    log_info "开始 Alauda Container Platform Distributed Tracing 卸载测试"
     log_info "=========================================="
 
     # 步骤 1: 设置环境变量（JAEGER_NS / JAEGER_INSTANCE_NAME）
@@ -153,7 +153,7 @@ test_uninstalling_distributed_tracing() {
         }
     fi
 
-    # 步骤 7: (可选) 卸载 Alauda Build of Jaeger v2 集群插件
+    # 步骤 7: (可选) 卸载 Alauda Container Platform Distributed Tracing 集群插件
     # 受 --skip-cluster-plugin 控制：传入时保留插件与镜像清单 ConfigMap 供后续测试复用。
     if [ "${SKIP_CLUSTER_PLUGIN:-false}" = "true" ]; then
         log_info "步骤 7: 跳过卸载 Jaeger v2 集群插件 (--skip-cluster-plugin)"
@@ -201,7 +201,7 @@ test_uninstalling_distributed_tracing() {
     fi
 
     log_success "=========================================="
-    log_success "Alauda Distributed Tracing 卸载测试完成，所有验证通过！"
+    log_success "Alauda Container Platform Distributed Tracing 卸载测试完成，所有验证通过！"
     log_success "=========================================="
     return 0
 }

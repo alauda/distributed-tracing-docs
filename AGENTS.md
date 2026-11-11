@@ -1,8 +1,8 @@
 # AGENTS.md
 
-## Alauda Distributed Tracing 架构
+## Alauda Container Platform Distributed Tracing 架构
 
-- Alauda Distributed Tracing 基于 Jaeger v2 和 Alauda Build of OpenTelemetry v2
+- Alauda Container Platform Distributed Tracing 基于 Jaeger v2 和 Alauda Container Platform Application Observability
 - 使用 OpenTelemetry Operator 部署 Jaeger 实例
 - 后端存储支持 Elasticsearch 和 Opensearch。
 

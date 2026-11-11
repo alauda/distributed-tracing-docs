@@ -2,17 +2,17 @@
 weight: 10
 ---
 
-# Uninstalling Alauda Distributed Tracing
+# Uninstalling Alauda Container Platform Distributed Tracing
 
-You can uninstall the Alauda Distributed Tracing components from your Alauda Container Platform. This can be done through the Alauda Container Platform web console or the command line interface (CLI).
+You can uninstall the Alauda Container Platform Distributed Tracing components from your Alauda Container Platform. This can be done through the Alauda Container Platform web console or the command line interface (CLI).
 
-Uninstalling the Alauda Distributed Tracing involves deleting the following components:
+Uninstalling the Alauda Container Platform Distributed Tracing involves deleting the following components:
 
 - OpenTelemetry Collector (`otel`) instance
 - Jaeger v2 (`jaeger`) instance
 - Jaeger namespace
 
-Optionally, you can also uninstall the Alauda Build of OpenTelemetry v2 Operator and the Alauda Build of Jaeger v2 cluster plugin if they are no longer needed.
+Optionally, you can also uninstall the Alauda Container Platform Application Observability Operator and the Alauda Container Platform Distributed Tracing cluster plugin if they are no longer needed.
 
 ## Uninstalling via the web console
 
@@ -52,10 +52,10 @@ kubectl delete namespace jaeger-system
 Replace `jaeger-system` with the namespace you used during installation if it differs from the default.
 :::
 
-### (Optional) Uninstall the Alauda Build of OpenTelemetry v2 Operator
+### (Optional) Uninstall the Alauda Container Platform Application Observability Operator
 
 :::warning
-The Alauda Build of OpenTelemetry v2 Operator is installed cluster-wide and may be used by other components such as OpenTelemetry Collector instances in other namespaces. Before uninstalling the Operator, verify that no other `OpenTelemetryCollector` or `Instrumentation` resources depend on it.
+The Alauda Container Platform Application Observability Operator is installed cluster-wide and may be used by other components such as OpenTelemetry Collector instances in other namespaces. Before uninstalling the Operator, verify that no other `OpenTelemetryCollector` or `Instrumentation` resources depend on it.
 :::
 
 If the Operator is no longer needed, uninstall it from the web console:
@@ -66,12 +66,12 @@ In the **Alauda Container Platform Application Observability** view of **Operato
 2. In the confirmation prompt, read the uninstall notice: *Removing the operator will not remove any of its custom resource definitions or managed resources. If you have created a resource instance, you need to delete it manually.*
 3. Click **Uninstall**.
 
-For more details, see <ExternalSiteLink name="opentelemetry" href="/uninstalling/uninstalling-opentelemetry.html" children="Uninstalling Alauda Build of OpenTelemetry v2" />.
+For more details, see <ExternalSiteLink name="opentelemetry" href="/uninstalling/uninstalling-opentelemetry.html" children="Uninstalling Alauda Container Platform Application Observability" />.
 
-### (Optional) Uninstall the Alauda Build of Jaeger v2 Cluster Plugin
+### (Optional) Uninstall the Alauda Container Platform Distributed Tracing Cluster Plugin
 
 :::warning
-The cluster plugin provides the container images used by every Alauda Distributed Tracing component on the target cluster. Uninstall it only after all Jaeger v2 and OpenTelemetry Collector instances on that cluster have been removed.
+The cluster plugin provides the container images used by every Alauda Container Platform Distributed Tracing component on the target cluster. Uninstall it only after all Jaeger v2 and OpenTelemetry Collector instances on that cluster have been removed.
 :::
 
 1. In the platform management view, navigate to **Administrator** > **Marketplace** > **Cluster Plugins**.
@@ -140,10 +140,10 @@ kubectl delete namespace ${JAEGER_NS}
 namespace "jaeger-system" deleted
 ```
 
-### (Optional) Uninstall the Alauda Build of OpenTelemetry v2 Operator
+### (Optional) Uninstall the Alauda Container Platform Application Observability Operator
 
 :::warning
-The Alauda Build of OpenTelemetry v2 Operator is installed cluster-wide and may be used by other components such as OpenTelemetry Collector instances in other namespaces. Before uninstalling the Operator, verify that no other `OpenTelemetryCollector` or `Instrumentation` resources depend on it.
+The Alauda Container Platform Application Observability Operator is installed cluster-wide and may be used by other components such as OpenTelemetry Collector instances in other namespaces. Before uninstalling the Operator, verify that no other `OpenTelemetryCollector` or `Instrumentation` resources depend on it.
 :::
 
 If the Operator is no longer needed, delete the `opentelemetry-operator2` subscription:
@@ -158,12 +158,12 @@ kubectl delete subscription opentelemetry-operator2 -n opentelemetry-operator2
 subscription.operators.coreos.com "opentelemetry-operator2" deleted
 ```
 
-For more details, see <ExternalSiteLink name="opentelemetry" href="/uninstalling/uninstalling-opentelemetry.html" children="Uninstalling Alauda Build of OpenTelemetry v2" />.
+For more details, see <ExternalSiteLink name="opentelemetry" href="/uninstalling/uninstalling-opentelemetry.html" children="Uninstalling Alauda Container Platform Application Observability" />.
 
-### (Optional) Uninstall the Alauda Build of Jaeger v2 Cluster Plugin
+### (Optional) Uninstall the Alauda Container Platform Distributed Tracing Cluster Plugin
 
 :::warning
-The cluster plugin provides the container images used by every Alauda Distributed Tracing component on the target cluster. Uninstall it only after all Jaeger v2 and OpenTelemetry Collector instances on that cluster have been removed.
+The cluster plugin provides the container images used by every Alauda Container Platform Distributed Tracing component on the target cluster. Uninstall it only after all Jaeger v2 and OpenTelemetry Collector instances on that cluster have been removed.
 :::
 
 Cluster plugins are uninstalled by deleting their `ModuleInfo` resource **in the `global` cluster**, regardless of which cluster the plugin targets.

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Alauda Distributed Tracing 安装文档测试脚本（OpenSearch 后端）
+# Alauda Container Platform Distributed Tracing 安装文档测试脚本（OpenSearch 后端）
 # 对应文档: docs/en/installing/installing-distributed-tracing-opensearch.mdx
-# 覆盖范围: 「Installing the Alauda Build of Jaeger v2 Cluster Plugin」（仅 CLI 安装方案）、
-#           「Deploying the Alauda Build of Jaeger v2」（含 ISM policy 与 jaeger-es-rollover init）、
+# 覆盖范围: 「Installing the Alauda Container Platform Distributed Tracing Cluster Plugin」（仅 CLI 安装方案）、
+#           「Deploying Jaeger」（含 ISM policy 与 jaeger-es-rollover init）、
 #           「Deploying the OpenTelemetry Collector」「Verification」「(Optional) SPM」章节。
 #
 # 与 Elasticsearch 版的差异：
@@ -183,7 +183,7 @@ _test_spm() {
 # 测试函数：分布式调用链安装（OpenSearch）
 test_installing_distributed_tracing_opensearch() {
     log_info "=========================================="
-    log_info "开始 Alauda Distributed Tracing 安装测试 (OpenSearch)"
+    log_info "开始 Alauda Container Platform Distributed Tracing 安装测试 (OpenSearch)"
     log_info "=========================================="
 
     # 步骤 0: OpenSearch 存储后端准备
@@ -206,18 +206,18 @@ test_installing_distributed_tracing_opensearch() {
         return 0
     fi
 
-    # 步骤 1: 安装 Alauda Build of Jaeger v2 集群插件（文档「Installing the Alauda Build
+    # 步骤 1: 安装 Alauda Container Platform Distributed Tracing 集群插件（文档「Installing the Alauda Build
     # of Jaeger v2 Cluster Plugin > Installing via the CLI」章节。两篇安装文档的该章节
     # 内容一致，安装逻辑抽象为共享函数、按 runme 前缀参数化，见
     # docs-runme-tests/projects/tracing/jaeger-plugin.sh；后续 get-platform-config
     # 从插件创建的 ConfigMap 读取 Jaeger 相关镜像地址）
-    log_info "步骤 1: 安装 Alauda Build of Jaeger v2 集群插件（CLI 方式）"
+    log_info "步骤 1: 安装 Alauda Container Platform Distributed Tracing 集群插件（CLI 方式）"
     tracing_install_jaeger_plugin "install-tracing-opensearch" || {
         log_error "Jaeger v2 集群插件安装失败"
         return 1
     }
 
-    # 步骤 2: 安装 Alauda Build of OpenTelemetry v2 Operator（跨仓库前置依赖）
+    # 步骤 2: 安装 Alauda Container Platform Application Observability Operator（跨仓库前置依赖）
     log_info "步骤 2: 安装 OpenTelemetry v2 Operator"
     if [ -z "${OTEL_REPO_ROOT:-}" ]; then
         log_error "OTEL_REPO_ROOT 未注入，无法定位 opentelemetry-docs 安装 OTel Operator"
@@ -466,7 +466,7 @@ test_installing_distributed_tracing_opensearch() {
     fi
 
     log_success "=========================================="
-    log_success "Alauda Distributed Tracing 安装测试 (OpenSearch) 完成，所有验证通过！"
+    log_success "Alauda Container Platform Distributed Tracing 安装测试 (OpenSearch) 完成，所有验证通过！"
     log_success "=========================================="
     return 0
 }

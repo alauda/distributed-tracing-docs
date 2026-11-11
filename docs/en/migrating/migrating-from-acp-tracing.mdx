@@ -4,11 +4,11 @@ weight: 10
 
 # Migrating from Alauda Container Platform Tracing
 
-This document describes how to migrate an existing tracing deployment based on the legacy **Alauda Container Platform (ACP) Tracing** stack — `Alauda Build of Jaeger` (Jaeger 1.60.0) plus `Alauda Build of OpenTelemetry` — to **Alauda Distributed Tracing** based on `Jaeger v2` (2.20.0) plus `Alauda Build of OpenTelemetry v2`.
+This document describes how to migrate an existing tracing deployment based on the legacy **Alauda Container Platform (ACP) Tracing** stack — `Alauda Build of Jaeger` (Jaeger 1.60.0) plus `Alauda Build of OpenTelemetry` — to **Alauda Container Platform Distributed Tracing** based on `Jaeger v2` (2.20.0) plus `Alauda Container Platform Application Observability`.
 
 The migration is performed in two stages:
 
-1. **OpenTelemetry stack migration.** Replace the legacy `Alauda Build of OpenTelemetry` Operator and Collector with `Alauda Build of OpenTelemetry v2`. Application pods are rolled out so that the v2 Java agent is injected. After this stage, telemetry is collected by the v2 Collector but still written to the legacy Jaeger backend. This stage is performed by following <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html" children="Migrating from Alauda Build of OpenTelemetry to Alauda Build of OpenTelemetry v2" />.
+1. **OpenTelemetry stack migration.** Replace the legacy `Alauda Build of OpenTelemetry` Operator and Collector with `Alauda Container Platform Application Observability`. Application pods are rolled out so that the v2 Java agent is injected. After this stage, telemetry is collected by the v2 Collector but still written to the legacy Jaeger backend. This stage is performed by following <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html" children="Migrating from Alauda Build of OpenTelemetry to Alauda Container Platform Application Observability" />.
 
 2. **Jaeger backend migration.** Deploy a new `Jaeger v2` instance alongside the legacy Jaeger, attach the legacy Elasticsearch indices to the read aliases of the new one, switch the v2 Collector's trace exporter to the new backend, and uninstall the legacy Jaeger once the new pipeline has been validated.
 
@@ -16,12 +16,12 @@ The legacy trace data is not copied or reindexed. Its indices are attached to th
 
 ## Overview
 
-### What changes between ACP Tracing and Alauda Distributed Tracing
+### What changes between ACP Tracing and Alauda Container Platform Distributed Tracing
 
-| Item | Alauda Container Platform Tracing (legacy) | Alauda Distributed Tracing (target) |
+| Item | Alauda Container Platform Tracing (legacy) | Alauda Container Platform Distributed Tracing (target) |
 | :--- | :--- | :--- |
 | Jaeger version | 1.60.0 | 2.20.0 |
-| Jaeger Operator | `Alauda Build of Jaeger` Operator (CRD: `jaegertracing.io/v1.Jaeger`) | `Alauda Build of OpenTelemetry v2` Operator (Jaeger v2 is deployed as an `opentelemetry.io/v1beta1.OpenTelemetryCollector`) |
+| Jaeger Operator | `Alauda Build of Jaeger` Operator (CRD: `jaegertracing.io/v1.Jaeger`) | `Alauda Container Platform Application Observability` Operator (Jaeger v2 is deployed as an `opentelemetry.io/v1beta1.OpenTelemetryCollector`) |
 | Default Elasticsearch index prefix | `acp-tracing-<cluster>` (date-stamped daily indices) | `acp-<cluster>` (rollover write/read aliases) |
 | Elasticsearch retention | `jaeger-es-index-cleaner` CronJob deletes daily indices older than `numberOfDays` (default `7`) | Index Lifecycle Management (ILM) policy `jaeger-ilm-policy` rolls and deletes indices automatically (default delete after `7d`) |
 | Tracing UI entry point | The platform-customized **Observability → Tracing** view, gated by the `acp-tracing-ui` feature switch | The native Jaeger UI exposed through an Ingress with the OAuth2 Proxy sidecar |
@@ -88,7 +88,7 @@ Because the new Jaeger UI is complete from the moment the aliases are attached, 
 
 ### Migrate Alauda Build of OpenTelemetry to v2 \{#migrate-alauda-build-of-opentelemetry-to-v2}
 
-Before migrating the Jaeger backend, complete the migration from `Alauda Build of OpenTelemetry` to `Alauda Build of OpenTelemetry v2` by following <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html" children="Migrating from Alauda Build of OpenTelemetry to Alauda Build of OpenTelemetry v2" />. That guide covers:
+Before migrating the Jaeger backend, complete the migration from `Alauda Build of OpenTelemetry` to `Alauda Container Platform Application Observability` by following <ExternalSiteLink name="opentelemetry" href="/migrating/migrating-to-v2.html" children="Migrating from Alauda Build of OpenTelemetry to Alauda Container Platform Application Observability" />. That guide covers:
 
 - Backing up and uninstalling the legacy `Alauda Build of OpenTelemetry` Operator and its `OpenTelemetryCollector` and `Instrumentation` resources.
 - Installing the v2 Operator.
@@ -97,7 +97,7 @@ Before migrating the Jaeger backend, complete the migration from `Alauda Build o
 
 At the end of this stage:
 
-- The v2 `Alauda Build of OpenTelemetry` Operator is installed and the legacy Operator is uninstalled.
+- The `Alauda Container Platform Application Observability` Operator is installed and the legacy Operator is uninstalled.
 - The v2 `OpenTelemetryCollector` in `cpaas-system` is running with its trace exporter still pointing at the legacy Jaeger (the natural outcome of recreating the Collector from the v1 backup).
 - All `Instrumentation` resources have `spec.java.image` set, and application pods have been rolled out with the v2 Java agent.
 
@@ -155,7 +155,7 @@ kubectl -n cpaas-system get configmap   jaeger-prod-oauth2-proxy  -o yaml \
 ```
 
 :::note
-The backup files are only used as configuration references and rollback artifacts. When you rebuild Jaeger on v2, follow the v2 conventions described in [Installing Alauda Distributed Tracing](../installing/installing-distributed-tracing-elasticsearch.mdx).
+The backup files are only used as configuration references and rollback artifacts. When you rebuild Jaeger on v2, follow the v2 conventions described in [Installing Alauda Container Platform Distributed Tracing](../installing/installing-distributed-tracing-elasticsearch.mdx).
 :::
 
 ### Verify Elasticsearch capacity
@@ -168,10 +168,10 @@ The new Jaeger writes to a separate index family (`acp-<cluster>-jaeger-*`) whil
 
 ### Deploy the new Jaeger v2 instance \{#deploy-the-new-jaeger-v2-instance}
 
-Follow [Deploying the Alauda Build of Jaeger v2](../installing/installing-distributed-tracing-elasticsearch.mdx#deploying-the-alauda-build-of-jaeger-v2) in the Alauda Distributed Tracing installation guide. The new Jaeger v2 instance is deployed in a dedicated namespace (`jaeger-system` by default) so that it does not collide with the legacy `jaeger-prod` instance in `cpaas-system`.
+Follow [Deploying Jaeger](../installing/installing-distributed-tracing-elasticsearch.mdx#deploying-the-alauda-build-of-jaeger-v2) in the Alauda Container Platform Distributed Tracing installation guide. The new Jaeger v2 instance is deployed in a dedicated namespace (`jaeger-system` by default) so that it does not collide with the legacy `jaeger-prod` instance in `cpaas-system`.
 
 :::warning
-Only follow the *Deploying the Alauda Build of Jaeger v2* section linked above. **Do not** execute the *Deploying the OpenTelemetry Collector* section of the same installation guide — the application-facing v2 OpenTelemetry Collector was already deployed in `cpaas-system` during [Stage 1 (OpenTelemetry v2 migration)](#migrate-alauda-build-of-opentelemetry-to-v2). Running that section would create a duplicate `otel` Collector in `jaeger-system` that no application talks to.
+Only follow the *Deploying Jaeger* section linked above. **Do not** execute the *Deploying the OpenTelemetry Collector* section of the same installation guide — the application-facing v2 OpenTelemetry Collector was already deployed in `cpaas-system` during [Stage 1 (OpenTelemetry v2 migration)](#migrate-alauda-build-of-opentelemetry-to-v2). Running that section would create a duplicate `otel` Collector in `jaeger-system` that no application talks to.
 :::
 
 When you reach the variable-setup step, keep the **default index prefix and base path**. Both must differ from the ones of the legacy instance:

@@ -1,14 +1,14 @@
-# 从 Observability/Distributed Tracing 迁移到 Alauda Distributed Tracing
+# 从 Observability/Distributed Tracing 迁移到 Alauda Container Platform Distributed Tracing
 
 > 设计文档 · 中文 · 2026-05-09
 
 ## 1. 背景
 
-| 维度                           | 老方案（Observability/Distributed Tracing）                             | 新方案（Alauda Distributed Tracing）                                                                                   |
+| 维度                           | 老方案（Observability/Distributed Tracing）                             | 新方案（Alauda Container Platform Distributed Tracing）                                                                                   |
 | :----------------------------- | :---------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------- |
 | Jaeger 版本                    | 1.60.0                                                                  | 2.16.0                                                                                                                 |
-| Jaeger Operator                | Alauda Build of Jaeger（CRD：`jaegertracing.io/v1.Jaeger`）             | Alauda Build of OpenTelemetry v2 Operator（通过 `opentelemetry.io/v1beta1.OpenTelemetryCollector` 部署 Jaeger Binary） |
-| OTel Operator                  | Alauda build of OpenTelemetry（包名 `opentelemetry-operator`，0.108.0） | Alauda Build of OpenTelemetry v2（包名 `opentelemetry-operator2`，0.147.0）                                            |
+| Jaeger Operator                | Alauda Build of Jaeger（CRD：`jaegertracing.io/v1.Jaeger`）             | Alauda Container Platform Application Observability Operator（通过 `opentelemetry.io/v1beta1.OpenTelemetryCollector` 部署 Jaeger Binary） |
+| OTel Operator                  | Alauda build of OpenTelemetry（包名 `opentelemetry-operator`，0.108.0） | Alauda Container Platform Application Observability（包名 `opentelemetry-operator2`，0.147.0）                                            |
 | 部署 OTel Collector 的命名空间 | 与 Operator **可以同名**（默认 `cpaas-system`）                         | **必须**与 Operator 不同（Operator 在 `opentelemetry-operator2`）                                                      |
 | Java auto-instrumentation 镜像 | Operator 自带，可以不设置 `Instrumentation.spec.java.image`             | Operator 不自带，**必须**显式设置 `spec.java.image`                                                                    |
 | ES 索引前缀（默认）            | `acp-tracing-<cluster>`                                                 | `acp-<cluster>`                                                                                                        |
@@ -37,7 +37,7 @@
 ### 3.1 原始思路回顾
 
 > 1. 不卸载老的 Observability/Distributed Tracing 中的 jaeger 组件。
-> 2. 把 Alauda build of OpenTelemetry 迁移到 Alauda Build of OpenTelemetry v2，新的 OTel Collector 推荐部署在原始命名空间中。
+> 2. 把 Alauda build of OpenTelemetry 迁移到 Alauda Container Platform Application Observability，新的 OTel Collector 推荐部署在原始命名空间中。
 > 3. 部署新的 jaeger 组件，对接好 ES。
 > 4. 新部署的 OTel Collector 的调用链 pipeline 中添加新 jaeger 地址，**双写**到新老 jaeger。
 > 5. 7 天后停止双写，删除老 Jaeger 实例和 jaeger-operator。
