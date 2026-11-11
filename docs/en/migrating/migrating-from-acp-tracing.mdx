@@ -97,7 +97,7 @@ Before migrating the Jaeger backend, complete the migration from `Alauda Build o
 
 At the end of this stage:
 
-- The v2 `Alauda Build of OpenTelemetry` Operator is installed and the legacy Operator is uninstalled.
+- The `Alauda Container Platform Application Observability` Operator is installed and the legacy Operator is uninstalled.
 - The v2 `OpenTelemetryCollector` in `cpaas-system` is running with its trace exporter still pointing at the legacy Jaeger (the natural outcome of recreating the Collector from the v1 backup).
 - All `Instrumentation` resources have `spec.java.image` set, and application pods have been rolled out with the v2 Java agent.
 
