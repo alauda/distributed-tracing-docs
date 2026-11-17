@@ -35,7 +35,7 @@ Search for the new names when you download the plugins from the Customer Portal.
 Multi-tenant tracing requires the Alauda Build of Jaeger v2 cluster plugin **v2.2.0 or later**. The plugin ships the container images required by the tracing components, including the observability gateway, and creates the following resources in the target cluster:
 
 - A ConfigMap named `jaeger-cluster-plugin-manifest` in the `cpaas-system` namespace. Later steps read the image addresses from this ConfigMap.
-- A ClusterRole named `jaeger-cluster-plugin-traces`, which grants `get` on the `traces` resource of the `tracing.alauda.io` API group. The gateway checks this permission to decide which namespaces a user can view. See [Granting Access to Traces](./granting-access-to-traces.mdx).
+- A ClusterRole named `tracing.alauda.io:traces-viewer`, which grants `get` on the `traces` resource of the `tracing.alauda.io` API group. The gateway checks this permission to decide which namespaces a user can view. See [Granting Access to Traces](./granting-access-to-traces.mdx).
 
 ### Installing via the web console
 
@@ -91,10 +91,10 @@ Cluster plugins are installed by creating a `ModuleInfo` resource **in the `glob
     ```bash {name=install-mt-tracing-opensearch:verify-jaeger-plugin-resources}
     kubectl get configmap jaeger-cluster-plugin-manifest -n cpaas-system \
       -o jsonpath='{.data.observability-gateway-image}{"\n"}'
-    kubectl get clusterrole jaeger-cluster-plugin-traces
+    kubectl get clusterrole tracing.alauda.io:traces-viewer
     ```
 
-    The first command prints the address of the observability gateway image, and the second command lists the `jaeger-cluster-plugin-traces` ClusterRole. If the image address is empty, the installed plugin is earlier than v2.2.0; upgrade it before you continue.
+    The first command prints the address of the observability gateway image, and the second command lists the `tracing.alauda.io:traces-viewer` ClusterRole. If the image address is empty, the installed plugin is earlier than v2.2.0; upgrade it before you continue.
 
 ## Granting the OpenTelemetry Operator Permission to Create RBAC Resources \{#granting-the-opentelemetry-operator-permission-to-create-rbac-resources}
 
@@ -427,13 +427,13 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     # Create the Secret:
     kubectl create secret generic ${JAEGER_INSTANCE_NAME}-gateway-oidc \
       --namespace=${JAEGER_NS} \
-      --from-literal=client_secret=${OIDC_CLIENT_SECRET} \
-      --from-literal=cookie_secret=${GATEWAY_COOKIE_SECRET} \
+      --from-literal=OBSERVABILITY_GATEWAY_CLIENT_SECRET=${OIDC_CLIENT_SECRET} \
+      --from-literal=OBSERVABILITY_GATEWAY_COOKIE_SECRET=${GATEWAY_COOKIE_SECRET} \
       --dry-run=client -o yaml | kubectl apply -f -
     ```
 
     :::note
-    Running this command again replaces `cookie_secret`, and every user has to log in again after the Jaeger Pod restarts.
+    Running this command again replaces `OBSERVABILITY_GATEWAY_COOKIE_SECRET`, and every user has to log in again after the Jaeger Pod restarts.
     :::
 
 9. Create the ServiceAccount of the gateway and grant it the cluster-level permissions it requires:
@@ -497,8 +497,8 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
         login: # [!code callout]
           enabled: true
           clientID: "${OIDC_CLIENT_ID}"
-          clientSecretFile: /etc/gateway/oidc/client_secret
-          cookieSecretFile: /etc/gateway/oidc/cookie_secret
+          clientSecretFile: /etc/gateway/oidc/client-secret
+          cookieSecretFile: /etc/gateway/oidc/cookie-secret
           externalURL: "${PLATFORM_URL}"
     ```
 
@@ -570,6 +570,11 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
         - name: gateway-oidc
           secret:
             secretName: ${JAEGER_INSTANCE_NAME}-gateway-oidc
+            items:
+              - key: OBSERVABILITY_GATEWAY_CLIENT_SECRET
+                path: client-secret
+              - key: OBSERVABILITY_GATEWAY_COOKIE_SECRET
+                path: cookie-secret
       volumeMounts:
         - name: opensearch-credentials
           mountPath: /etc/jaeger/opensearch-credentials
@@ -1099,7 +1104,7 @@ Create a ServiceAccount in namespace A, allow it to view the traces of namespace
 ```bash {name=install-mt-tracing-opensearch:create-test-serviceaccount}
 kubectl create serviceaccount traces-reader -n ${TEST_NS_A}
 kubectl create rolebinding traces-reader -n ${TEST_NS_A} \
-  --clusterrole=jaeger-cluster-plugin-traces \
+  --clusterrole=tracing.alauda.io:traces-viewer \
   --serviceaccount=${TEST_NS_A}:traces-reader
 TOKEN=$(kubectl create token traces-reader -n ${TEST_NS_A} --duration=10m)
 ```
@@ -1180,6 +1185,11 @@ The platform Collector already routes spans to Jaeger by service through the `lo
         - name: gateway-oidc
           secret:
             secretName: ${JAEGER_INSTANCE_NAME}-gateway-oidc
+            items:
+              - key: OBSERVABILITY_GATEWAY_CLIENT_SECRET
+                path: client-secret
+              - key: OBSERVABILITY_GATEWAY_COOKIE_SECRET
+                path: cookie-secret
         - name: monitoring-credentials # [!code callout]
           secret:
             secretName: monitoring-credentials
