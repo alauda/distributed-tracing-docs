@@ -964,12 +964,26 @@ After Jaeger v2 is running, deploy the platform OpenTelemetry Collector. Applica
                 key: k8s.pod.uid
               - action: delete
                 key: k8s.pod.ip
+              - action: delete
+                key: k8s.deployment.name
+              - action: delete
+                key: k8s.statefulset.name
+              - action: delete
+                key: k8s.daemonset.name
+              - action: delete
+                key: k8s.job.name
+              - action: delete
+                key: k8s.cronjob.name
           k8s_attributes: # [!code callout]
             extract:
               metadata:
                 - k8s.namespace.name
                 - k8s.pod.name
                 - k8s.deployment.name
+                - k8s.statefulset.name
+                - k8s.daemonset.name
+                - k8s.job.name
+                - k8s.cronjob.name
             passthrough: false
             pod_association:
               - sources:
@@ -1024,8 +1038,8 @@ After Jaeger v2 is running, deploy the platform OpenTelemetry Collector. Applica
       2. Resource requests and limits for the Collector container. Adjust based on your expected trace throughput.
       3. Enables the Operator to automatically create `ServiceMonitor` resources for the Collector's metrics endpoint.
       4. The OTLP receiver accepts trace data over gRPC (port `4317`) and HTTP (port `4318`), and the Zipkin receiver over port `9411`.
-      5. The `resource/strip` processor deletes the namespace and Pod attributes reported by the sender, so that a sender cannot claim another namespace.
-      6. The `k8s_attributes` processor identifies the sending Pod by the source IP address of the connection and records its namespace, Pod name, and Deployment name. The Operator creates the ClusterRole and ClusterRoleBinding that this processor requires.
+      5. The `resource/strip` processor deletes the namespace, Pod, and workload attributes reported by the sender, so that a sender cannot claim another namespace or workload. Keep this list consistent with the attributes that the `k8s_attributes` processor records, because that processor does not overwrite an attribute that the sender already set.
+      6. The `k8s_attributes` processor identifies the sending Pod by the source IP address of the connection and records its namespace, Pod name, and the name of the Deployment, StatefulSet, DaemonSet, Job, or CronJob that owns it. The Operator creates the ClusterRole and ClusterRoleBinding that this processor requires.
       7. The `transform/service-ns` processor renames each service to `<service>.<namespace>`. Service names that already end with `.<namespace>`, such as those of service mesh proxies, stay unchanged. The gateway uses this suffix to find the namespace of a service in results that contain only service names.
       8. The `load_balancing` exporter forwards spans to the Jaeger Pods through the headless Service that the Operator creates for Jaeger. With `routing_key: service`, all spans of a service go to the same Jaeger Pod, which keeps the metrics of [Service Performance Monitoring](#optional-enabling-service-performance-monitoring-spm) correct when Jaeger runs with more than one replica.
       9. Keep this processor order: `resource/strip` must run before `k8s_attributes`, and `transform/service-ns` must run after it.
