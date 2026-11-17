@@ -97,7 +97,7 @@ Cluster plugins are installed by creating a `ModuleInfo` resource **in the `glob
 
 ## Granting the OpenTelemetry Operator Permission to Create RBAC Resources \{#granting-the-opentelemetry-operator-permission-to-create-rbac-resources}
 
-The platform OpenTelemetry Collector uses the `k8s_attributes` processor, which reads Pods, Namespaces, and ReplicaSets across the cluster. The Alauda Build of OpenTelemetry v2 Operator creates the required ClusterRole and ClusterRoleBinding for the Collector automatically, but only after you allow it to manage cluster-level RBAC resources. For details, see <ExternalSiteLink name="opentelemetry" href="/installing/rbac-resources.html" children="Creating the Required RBAC Resources Automatically" />.
+The platform OpenTelemetry Collector uses the `k8s_attributes` processor, which requires permission to read Pods, Namespaces, and ReplicaSets across the cluster. The Alauda Build of OpenTelemetry v2 Operator creates the required ClusterRole and ClusterRoleBinding for the Collector automatically, but only after you allow it to manage cluster-level RBAC resources. For details, see <ExternalSiteLink name="opentelemetry" href="/installing/rbac-resources.html" children="Creating the Required RBAC Resources Automatically" />.
 
 Create the following resources **before** you install the Operator. If the Operator is already installed, create them and then restart the Operator as described in step 3.
 
