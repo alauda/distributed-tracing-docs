@@ -1088,46 +1088,6 @@ The gateway lets a user view the traces of a namespace when the user is allowed 
 
 - **Platform administrators** can view all traces.
 - **Built-in roles**: the ClusterRole is aggregated into the namespace administrator, namespace developer, and project administrator roles of the cluster. Users with these roles can view the traces of the namespaces the roles apply to, without further configuration.
-- **Custom roles**: the ClusterRole also carries the `rbac.cpaas.io/aggregate-to-traces-viewer` label. To grant only the permission to view traces, create a `RoleTemplate` **in the `global` cluster** that selects this label, and assign the role to users on the platform:
-
-    ```yaml
-    apiVersion: auth.alauda.io/v1beta1
-    kind: RoleTemplate
-    metadata:
-      name: traces-viewer
-      annotations:
-        cpaas.io/display-name: Traces Viewer
-      labels:
-        auth.cpaas.io/roletemplate.level: namespace
-        auth.cpaas.io/roletemplate.official: "false"
-        rbac.cpaas.io/version: "v2"
-        auth.cpaas.io/roletemplate.frozen: "false"
-    spec:
-      aggregationRules:
-        - clusterRoleSelectors:
-            - matchLabels:
-                rbac.cpaas.io/aggregate-to-traces-viewer: "true"
-                rbac.cpaas.io/aggregate-to-scope-business-ns: "true"
-          scope: business-ns
-      rules: []
-    ```
-
-    For the fields of a `RoleTemplate`, see <ExternalSiteLink name="acp" href="/security/users_and_roles/role/functions/roletemplate_howto.html" children="How to Create Custom Platform Role" />.
-
-- **ServiceAccounts**: bind the ClusterRole to the ServiceAccount with a `RoleBinding` in each namespace whose traces it may view, or with a `ClusterRoleBinding` for all namespaces. For example:
-
-    ```bash
-    kubectl create rolebinding <name> -n <namespace> \
-      --clusterrole=jaeger-cluster-plugin-traces \
-      --serviceaccount=<serviceaccount-namespace>:<serviceaccount-name>
-    ```
-
-Users and programs can access the traces in the following ways:
-
-- **Browser**: open `${PLATFORM_URL}${JAEGER_BASEPATH}` and log in with the platform account.
-- **API**: send the Jaeger Query API requests to `${PLATFORM_URL}${JAEGER_BASEPATH}/api/...` with an ACP API token or a ServiceAccount token of the cluster in the `Authorization: Bearer <token>` header.
-
-With the default configuration, changes to role bindings and user groups take effect within about one minute, because the gateway caches authentication and authorization results for 60 seconds.
 
 :::warning
 Uninstalling the cluster plugin deletes the `jaeger-cluster-plugin-traces` ClusterRole. Afterwards only platform administrators can view traces through the gateway.
