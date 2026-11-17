@@ -89,9 +89,7 @@ The `backends` list contains one entry for the Jaeger instance:
 
 - The service list is not filtered. Every authenticated user, including a user without access to any namespace, sees all service names, and therefore the namespace names in their suffixes.
 - Under the `mask` policy, every authenticated user sees the structure of all traces: service names, span names, durations, and status.
-- Search conditions apply to all spans, including the spans of namespaces the user cannot access. By searching with guessed tag values, a user can learn tag values of such spans.
 - The gateway authenticates ID tokens and API tokens through the platform in the `global` cluster. While the platform is unreachable, these users cannot query traces; ServiceAccount tokens are authenticated by the cluster itself and keep working.
 - Changes to role bindings and user groups take effect within about one minute with the default cache settings. A user group change becomes effective only after the platform reports the new groups.
-- The dependency graph is not supported: users who are not platform administrators get an empty result.
 - Spans that the platform Collector cannot associate with a Pod have no namespace, and only platform administrators can view them in full. See [Sending trace data to the platform Collector](./installing-multi-tenant-tracing-opensearch.mdx#sending-trace-data-to-the-platform-collector).
 - Service names change to `<service>.<namespace>`. Alerts, dashboards, and SPM queries based on service names must use the new names.
