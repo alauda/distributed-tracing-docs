@@ -16,7 +16,7 @@ The gateway returns the responses of Jaeger to platform administrators unchanged
 
 ### Namespace of a span
 
-- A span belongs to the namespace in the `k8s.namespace.name` resource attribute, which the platform OpenTelemetry Collector records. In the responses of the Jaeger v1 Query API, the attribute is a process tag.
+- A span belongs to the namespace in the `k8s.namespace.name` resource attribute, which the platform OpenTelemetry Collector records. The gateway reads it from the process tags in the responses of the `/api/traces` endpoints, and from the resource attributes in the responses of the `/api/v3/traces` endpoints.
 - Spans without this attribute are treated as belonging to a namespace the user cannot access.
 - Results that contain only service names, such as operation lists, trace summaries, and SPM metrics, use the namespace suffix of the service name, as in `checkout.shop`. A suffix that is not the name of an existing namespace is treated as a namespace the user cannot access.
 
