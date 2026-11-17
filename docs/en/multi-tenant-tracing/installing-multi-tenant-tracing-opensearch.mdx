@@ -1028,7 +1028,7 @@ The service names in Jaeger, in the metrics generated from spans, and in alerts 
 
 ## Verifying Tenant Isolation \{#verifying-tenant-isolation}
 
-Generate trace data in two namespaces, and query it with a ServiceAccount that can view the traces of only one of them.
+Generate trace data in two namespaces, and compare what a platform administrator and a user who can access only one of them see in the Jaeger UI.
 
 1. Set the two namespaces. Use namespaces that belong to projects on the platform:
 
@@ -1080,48 +1080,55 @@ Generate trace data in two namespaces, and query it with a ServiceAccount that c
     done
     ```
 
-3. Create a ServiceAccount in namespace A, allow it to view the traces of namespace A, and issue a token for it:
+3. As a platform administrator, create a test user and assign the user the namespace developer role (**Developers**) in namespace A. See <ExternalSiteLink name="acp" href="/security/users_and_roles/user/functions/create_user.html" children="Create User" /> and <ExternalSiteLink name="acp" href="/security/users_and_roles/user/functions/add_role.html" children="Manage User Roles" />.
 
-    ```bash {name=install-mt-tracing-opensearch:create-test-serviceaccount}
-    kubectl create serviceaccount traces-reader -n ${TEST_NS_A}
-    kubectl create rolebinding traces-reader -n ${TEST_NS_A} \
-      --clusterrole=jaeger-cluster-plugin-traces \
-      --serviceaccount=${TEST_NS_A}:traces-reader
-    TOKEN=$(kubectl create token traces-reader -n ${TEST_NS_A} --duration=10m)
-    ```
+4. Open the Jaeger UI at `${PLATFORM_URL}${JAEGER_BASEPATH}` and log in as a platform administrator. Find the traces of `telemetrygen.<namespace A>` and `telemetrygen.<namespace B>`, and open one trace of each. The spans of both services keep all their tags: the process lists `k8s.namespace.name` and `k8s.pod.name`, and the spans list tags such as `network.peer.address` and `service.peer.name`.
 
-4. List the services. The service list is not filtered, so both services appear with the namespace suffix:
+5. Log out, and log in to the Jaeger UI as the test user:
+    - The **Service** list contains both services, because the service list is not filtered.
+    - The spans of `telemetrygen.<namespace A>` keep all their tags, as in the previous step.
+    - The spans of `telemetrygen.<namespace B>` are masked: the process lists only `k8s.namespace.name`, and the spans list only status tags, such as `span.kind`.
 
-    ```bash {name=install-mt-tracing-opensearch:verify-services}
-    curl -k -sS -H "Authorization: Bearer ${TOKEN}" \
-      "${PLATFORM_URL}${JAEGER_BASEPATH}/api/services" | jq -c '.data | map(select(startswith("telemetrygen.")))'
-    ```
+6. Delete the test user. See <ExternalSiteLink name="acp" href="/security/users_and_roles/user/functions/manage_user.html" children="User Management" />.
 
-    The output contains `telemetrygen.<namespace A>` and `telemetrygen.<namespace B>`.
+{/*
+Automated verification with a ServiceAccount token, which replaces the test user of steps 3 to 6. Run steps 1 and 2 of this section first: set `TEST_NS_A` and `TEST_NS_B`, and run `install-mt-tracing-opensearch:deploy-telemetrygen`.
 
-5. Query one trace of each service and print the tags that remain on its spans:
+Create a ServiceAccount in namespace A, allow it to view the traces of namespace A, and issue a token for it:
 
-    ```bash {name=install-mt-tracing-opensearch:verify-isolation}
-    for ns in ${TEST_NS_A} ${TEST_NS_B}; do
-      echo "== telemetrygen.${ns}"
-      curl -k -sS -H "Authorization: Bearer ${TOKEN}" \
-        "${PLATFORM_URL}${JAEGER_BASEPATH}/api/traces?service=telemetrygen.${ns}&lookback=1h&limit=1" \
-        | jq -c '.data[0] | {process: [.processes[].tags[].key] | unique, span: [.spans[].tags[].key] | unique}'
-    done
-    ```
+```bash {name=install-mt-tracing-opensearch:create-test-serviceaccount}
+kubectl create serviceaccount traces-reader -n ${TEST_NS_A}
+kubectl create rolebinding traces-reader -n ${TEST_NS_A} \
+  --clusterrole=jaeger-cluster-plugin-traces \
+  --serviceaccount=${TEST_NS_A}:traces-reader
+TOKEN=$(kubectl create token traces-reader -n ${TEST_NS_A} --duration=10m)
+```
 
-    The expected results are:
-    - The spans of namespace A keep all their tags. `process` lists `k8s.namespace.name` and `k8s.pod.name`, and `span` lists tags such as `network.peer.address` and `service.peer.name`.
-    - The spans of namespace B are masked. `process` lists only `k8s.namespace.name`, and `span` lists only status tags, such as `span.kind`.
+List the services. The output contains `telemetrygen.<namespace A>` and `telemetrygen.<namespace B>`, as the **Service** list in step 5:
 
-6. Delete the test ServiceAccount and RoleBinding:
+```bash {name=install-mt-tracing-opensearch:verify-services}
+curl -k -sS -H "Authorization: Bearer ${TOKEN}" \
+  "${PLATFORM_URL}${JAEGER_BASEPATH}/api/services" | jq -c '.data | map(select(startswith("telemetrygen.")))'
+```
 
-    ```bash {name=install-mt-tracing-opensearch:delete-test-serviceaccount}
-    kubectl delete rolebinding traces-reader -n ${TEST_NS_A}
-    kubectl delete serviceaccount traces-reader -n ${TEST_NS_A}
-    ```
+Query one trace of each service and print the tags that remain on its spans. `process` and `span` list the process tags and span tags that the test user sees in step 5:
 
-You can also check the isolation in the Jaeger UI: a platform administrator sees the spans of both services in full, and a user with the namespace developer role in namespace A sees the spans of `telemetrygen.<namespace B>` masked.
+```bash {name=install-mt-tracing-opensearch:verify-isolation}
+for ns in ${TEST_NS_A} ${TEST_NS_B}; do
+  echo "== telemetrygen.${ns}"
+  curl -k -sS -H "Authorization: Bearer ${TOKEN}" \
+    "${PLATFORM_URL}${JAEGER_BASEPATH}/api/traces?service=telemetrygen.${ns}&lookback=1h&limit=1" \
+    | jq -c '.data[0] | {process: [.processes[].tags[].key] | unique, span: [.spans[].tags[].key] | unique}'
+done
+```
+
+Delete the test ServiceAccount and RoleBinding:
+
+```bash {name=install-mt-tracing-opensearch:delete-test-serviceaccount}
+kubectl delete rolebinding traces-reader -n ${TEST_NS_A}
+kubectl delete serviceaccount traces-reader -n ${TEST_NS_A}
+```
+*/}
 
 ## (Optional) Enabling Service Performance Monitoring (SPM) \{#optional-enabling-service-performance-monitoring-spm}
 
