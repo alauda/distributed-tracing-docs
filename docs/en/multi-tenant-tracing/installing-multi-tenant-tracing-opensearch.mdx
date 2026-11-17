@@ -829,22 +829,24 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
 **Verification**
 
-1. Check that the gateway asks a browser that has not logged in to log in through the platform:
+{/*
+Check that the gateway asks a browser that has not logged in to log in through the platform:
 
-    ```bash {name=install-mt-tracing-opensearch:verify-gateway-login-redirect}
-    curl -k -sS -o /dev/null -H 'Accept: text/html' \
-      -w '%{http_code} %{redirect_url}\n' "${PLATFORM_URL}${JAEGER_BASEPATH}/"
-    ```
+```bash {name=install-mt-tracing-opensearch:verify-gateway-login-redirect}
+curl -k -sS -o /dev/null -H 'Accept: text/html' \
+  -w '%{http_code} %{redirect_url}\n' "${PLATFORM_URL}${JAEGER_BASEPATH}/"
+```
 
-    The output starts with `302`, followed by the address of the platform login page, such as `https://<platform address>/console-dex/auth?client_id=...`. Requests that do not come from a browser page and carry no valid credentials receive `401` instead.
+The output starts with `302`, followed by the address of the platform login page, such as `https://<platform address>/console-dex/auth?client_id=...`. Requests that do not come from a browser page and carry no valid credentials receive `401` instead. 
+*/}
 
-2. Print the Jaeger UI URL, open it in a browser, and log in with your platform account:
+Print the Jaeger UI URL, open it in a browser, and log in with your platform account:
 
-    ```bash {name=install-mt-tracing-opensearch:print-jaeger-url}
-    echo "Jaeger UI: ${PLATFORM_URL}${JAEGER_BASEPATH}"
-    ```
+```bash {name=install-mt-tracing-opensearch:print-jaeger-url}
+echo "Jaeger UI: ${PLATFORM_URL}${JAEGER_BASEPATH}"
+```
 
-    If you are already logged in to the platform in the same browser, the Jaeger UI opens without asking you to log in again.
+If you are already logged in to the platform in the same browser, the Jaeger UI opens without asking you to log in again.
 
 ## Deploying the Platform OpenTelemetry Collector \{#deploying-the-platform-opentelemetry-collector}
 
