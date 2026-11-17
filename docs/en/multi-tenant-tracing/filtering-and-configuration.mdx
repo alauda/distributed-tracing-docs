@@ -5,7 +5,7 @@ weight: 20
 # Filtering Policies and Gateway Configuration
 
 :::warning Technology Preview
-Multi-tenant tracing is a Technology Preview feature. Evaluate it within the documented limits and do not treat it as production-supported.
+Multi-tenant tracing is a Technology Preview feature. Evaluate it within the documented limits.
 :::
 
 This page describes how the observability gateway processes query results, lists the fields of the gateway configuration, and lists the known limitations of multi-tenant tracing.
@@ -65,7 +65,7 @@ The gateway does not start if the configuration contains an unknown field or an 
 | `cluster` | None (required) | Name of the cluster on the platform. |
 | `platform.url` | None (required) | Address of the platform, without a path. The gateway authenticates users and runs the built-in login through it. |
 | `platform.caFile` | Empty | PEM file with the CA certificate that verifies the platform certificate. |
-| `platform.insecureSkipVerify` | `false` | Skips the verification of the platform certificate. Use it for testing only: the gateway sends user credentials to the platform. |
+| `platform.insecureSkipVerify` | `false` | Skips the verification of the platform certificate. |
 | `platform.timeout` | `5s` | Timeout of each request that the gateway sends to the platform to authenticate a user or to run the built-in login. |
 | `authn.cacheTTL` | `60s` | How long a successful authentication is cached, at most until the token expires. |
 | `authn.negativeTTL` | `10s` | How long a failed authentication is cached. |

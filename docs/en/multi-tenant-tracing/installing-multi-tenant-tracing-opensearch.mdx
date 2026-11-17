@@ -5,7 +5,7 @@ weight: 10
 # Installing Multi-Tenant Tracing with OpenSearch
 
 :::warning Technology Preview
-Multi-tenant tracing is a Technology Preview feature. Evaluate it within the documented limits and do not treat it as production-supported.
+Multi-tenant tracing is a Technology Preview feature. Evaluate it within the documented limits.
 :::
 
 In a multi-tenant installation, the observability gateway takes the place of the OAuth2 Proxy sidecar in front of Jaeger, and a platform OpenTelemetry Collector records the namespace of the sending Pod on every span. Each user sees the spans of the namespaces the user has access to in full; spans of other namespaces are processed according to the [filtering policy](./filtering-and-configuration.mdx#filtering-policies).
@@ -180,7 +180,6 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 - The **Alauda Container Platform Application Observability** (previously **Alauda Build of OpenTelemetry v2**) Operator is installed.
 - An OpenSearch 3.x instance is available, and you have the endpoint URL, username, and password for it.
 - An active ACP CLI (`kubectl`) session by a cluster administrator with the `cluster-admin` role in the target cluster.
-- Read access to the `dex.tls` Secret in the `cpaas-system` namespace of the `global` cluster, or the CA certificate that issued the platform certificate if the platform uses a custom certificate.
 - The `envsubst`, `curl`, and `jq` commands are available.
 
 **Procedure**
@@ -424,47 +423,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     kubectl delete job jaeger-es-rollover-init -n ${JAEGER_NS}
     ```
 
-8. Create a Secret with the CA certificate of the platform. The gateway sends user credentials to the platform to authenticate them, and uses this CA certificate to verify the platform certificate.
-
-    1. Run the following commands **in the `global` cluster** to save the CA certificate that issued the platform certificate to `platform-ca.crt`:
-
-        ```bash {name=install-mt-tracing-opensearch:export-platform-ca}
-        kubectl -n cpaas-system get secret dex.tls -o jsonpath='{.data.ca\.crt}' | base64 -d > platform-ca.crt
-        grep -q 'BEGIN CERTIFICATE' platform-ca.crt && echo "saved platform-ca.crt" || echo "dex.tls has no ca.crt"
-        ```
-
-        The commands print `saved platform-ca.crt`. If they print `dex.tls has no ca.crt` instead, the Secret was not issued by the built-in CA of the platform, for example because the platform uses a custom certificate. In this case, and whenever the platform uses a custom certificate, save the CA certificate that issued the platform certificate to `platform-ca.crt` instead.
-
-        :::note
-        Do not fall back to the `tls.crt` key of `dex.tls`. It holds the certificate of the dex service, not the certificate that the platform address presents to browsers and to the gateway, so it cannot verify the platform certificate.
-        :::
-
-        :::warning
-        Do not use the `cpaas-ca` Secret of the target cluster. It belongs to a different CA, which cannot verify the platform certificate.
-        :::
-
-    2. Verify that the CA certificate verifies the platform certificate. `curl` checks the certificate chain and the host name or IP address of `PLATFORM_URL`, as the gateway does:
-
-        ```bash {name=install-mt-tracing-opensearch:verify-platform-ca}
-        curl -sS -o /dev/null --cacert platform-ca.crt "${PLATFORM_URL}" && echo "platform certificate verified"
-        ```
-
-        The command prints `platform certificate verified`. If it reports a certificate error instead, the gateway cannot authenticate users with this CA certificate.
-
-    3. Create the Secret in the target cluster:
-
-        ```bash {name=install-mt-tracing-opensearch:create-platform-ca-secret}
-        kubectl create secret generic ${JAEGER_INSTANCE_NAME}-platform-ca \
-          --namespace=${JAEGER_NS} \
-          --from-file=ca.crt=platform-ca.crt \
-          --dry-run=client -o yaml | kubectl apply -f -
-        ```
-
-    :::note
-    If the platform certificate is later issued by a different CA, repeat this step and restart the Jaeger Pod.
-    :::
-
-9. Create a Secret for the gateway login, which integrates the Jaeger UI with the Alauda Container Platform authentication:
+8. Create a Secret for the gateway login, which integrates the Jaeger UI with the Alauda Container Platform authentication:
 
     ```bash {name=install-mt-tracing-opensearch:create-gateway-oidc-secret}
     # Generate the key that encrypts the login session cookies:
@@ -481,7 +440,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     Running this command again replaces `cookie_secret`, and every user has to log in again after the Jaeger Pod restarts.
     :::
 
-10. Create the ServiceAccount of the gateway and grant it the cluster-level permissions it requires:
+9. Create the ServiceAccount of the gateway and grant it the cluster-level permissions it requires:
 
     ```bash {name=install-mt-tracing-opensearch:create-gateway-rbac}
     kubectl apply -f - <<EOF
@@ -523,7 +482,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
     The gateway watches namespaces so that it only checks the namespaces that exist, creates `SubjectAccessReview` resources to check the permissions of users, and creates `TokenReview` resources to authenticate ServiceAccount tokens.
 
-11. Create a file named `gateway-config.yaml` with the following content:
+10. Create a file named `gateway-config.yaml` with the following content:
 
     ```yaml title="gateway-config.yaml" {name=install-mt-tracing-opensearch:gateway-config-yaml}
     apiVersion: v1
@@ -538,7 +497,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
         cluster: "${CLUSTER_NAME}"
         platform:
           url: "${PLATFORM_URL}"
-          caFile: /etc/gateway/ca/ca.crt # [!code callout]
+          insecureSkipVerify: true # [!code callout]
         backends:
           - name: jaeger
             type: jaeger
@@ -557,7 +516,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     <Callouts>
       1. The business port of the gateway. The Jaeger Service and the Ingress forward requests to this port.
       2. The operations port, which serves `/healthz`, `/readyz`, and `/metrics`. Do not expose it through the Ingress.
-      3. The CA certificate from the `${JAEGER_INSTANCE_NAME}-platform-ca` Secret created in step 8.
+      3. The gateway skips the verification of the platform certificate when it sends user credentials to the platform to authenticate them.
       4. The query service of Jaeger in the same Pod, including the base path.
       5. How the gateway processes spans of namespaces the user cannot access: `mask` (default), `drop`, or `keep`. See [Filtering Policies](./filtering-and-configuration.mdx#filtering-policies).
       6. The built-in login, which redirects users who open the Jaeger UI in a browser to the platform login page. The client ID and secret are those of the platform, and the callback address is `${PLATFORM_URL}${JAEGER_BASEPATH}/oauth2/callback`.
@@ -571,7 +530,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     envsubst < gateway-config.yaml | kubectl apply -f -
     ```
 
-12. Create a file named `jaeger.yaml` with the following content:
+11. Create a file named `jaeger.yaml` with the following content:
 
     ```yaml title="jaeger.yaml" {name=install-mt-tracing-opensearch:jaeger-yaml}
     apiVersion: opentelemetry.io/v1beta1
@@ -620,12 +579,6 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
         - name: gateway-oidc
           secret:
             secretName: ${JAEGER_INSTANCE_NAME}-gateway-oidc
-        - name: gateway-platform-ca
-          secret:
-            secretName: ${JAEGER_INSTANCE_NAME}-platform-ca
-            items:
-              - key: ca.crt
-                path: ca.crt
       volumeMounts:
         - name: opensearch-credentials
           mountPath: /etc/jaeger/opensearch-credentials
@@ -774,19 +727,16 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
             - name: gateway-oidc
               mountPath: /etc/gateway/oidc
               readOnly: true
-            - name: gateway-platform-ca
-              mountPath: /etc/gateway/ca
-              readOnly: true
     ```
 
     <Callouts>
       1. The `prometheus: kube-prometheus` label is inherited by the auto-created `ServiceMonitor` resource, enabling ACP Prometheus to scrape Jaeger metrics.
       2. The Jaeger v2 container image. This is not the default OpenTelemetry Collector image; it is a custom Jaeger binary built on the OpenTelemetry Collector framework.
-      3. The Pod runs as the gateway ServiceAccount created in step 10, so the Operator does not create a ServiceAccount for this instance.
+      3. The Pod runs as the gateway ServiceAccount created in step 9, so the Operator does not create a ServiceAccount for this instance.
       4. Resource requests and limits for the Jaeger container. Adjust based on your expected trace volume; higher throughput environments may require more CPU and memory.
       5. The ports of the Service that the Operator creates for the instance: `gateway` for the Ingress, `gateway-ops` for the gateway metrics, and `jaeger-grpc` for the Jaeger gRPC Query API.
       6. Enables the Prometheus metrics endpoint for the Jaeger instance.
-      7. The gateway configuration, login Secret, and platform CA certificate created in steps 8 to 11.
+      7. The login Secret and the gateway configuration created in steps 8 and 10.
       8. The `jaeger_storage` extension configures the [OpenSearch backend](../configuration/storage-backends/opensearch.mdx#configuration) for storing trace data.
       9. The `opensearch` driver selects the OpenSearch storage implementation. Jaeger uses the same implementation for OpenSearch as for Elasticsearch.
       10. `service_cache_ttl` controls how long the service name cache is kept. The default is `12h`. If the ISM rollover-to-delete interval is short, reduce this value to ensure the Jaeger UI can discover services promptly.
@@ -801,13 +751,13 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
       19. Resource requests and limits for the gateway. The gateway processes the query results of users who are not platform administrators; increase the CPU limit if many users query traces at the same time.
     </Callouts>
 
-13. Render the manifest with `envsubst` and apply the configuration:
+12. Render the manifest with `envsubst` and apply the configuration:
 
     ```bash {name=install-mt-tracing-opensearch:apply-jaeger}
     envsubst < jaeger.yaml | kubectl apply -f -
     ```
 
-14. Wait for the Jaeger Pod to be ready:
+13. Wait for the Jaeger Pod to be ready:
 
     ```bash {name=install-mt-tracing-opensearch:wait-jaeger-rollout}
     kubectl rollout status deployment/${JAEGER_INSTANCE_NAME}-collector \
@@ -818,7 +768,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     The Operator creates the Deployment shortly after the resource is applied. If the command reports that the Deployment is not found, run it again.
     :::
 
-15. Label the namespace and create an Ingress to expose the Jaeger UI:
+14. Label the namespace and create an Ingress to expose the Jaeger UI:
 
     ```bash {name=install-mt-tracing-opensearch:label-jaeger-ns}
     kubectl label namespace ${JAEGER_NS} cpaas.io/project=cpaas-system --overwrite
@@ -856,7 +806,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
       -n ${JAEGER_NS} --timeout=180s
     ```
 
-16. Create a `ServiceMonitor` so that ACP Prometheus scrapes the gateway metrics:
+15. Create a `ServiceMonitor` so that ACP Prometheus scrapes the gateway metrics:
 
     ```bash {name=install-mt-tracing-opensearch:create-gateway-servicemonitor}
     kubectl apply -f - <<EOF
@@ -891,7 +841,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 1. Check that the gateway asks a browser that has not logged in to log in through the platform:
 
     ```bash {name=install-mt-tracing-opensearch:verify-gateway-login-redirect}
-    curl -sS -o /dev/null --cacert platform-ca.crt -H 'Accept: text/html' \
+    curl -k -sS -o /dev/null -H 'Accept: text/html' \
       -w '%{http_code} %{redirect_url}\n' "${PLATFORM_URL}${JAEGER_BASEPATH}/"
     ```
 
@@ -1150,7 +1100,7 @@ Generate trace data in two namespaces, and query it with a ServiceAccount that c
 4. List the services. The service list is not filtered, so both services appear with the namespace suffix:
 
     ```bash {name=install-mt-tracing-opensearch:verify-services}
-    curl -sS --cacert platform-ca.crt -H "Authorization: Bearer ${TOKEN}" \
+    curl -k -sS -H "Authorization: Bearer ${TOKEN}" \
       "${PLATFORM_URL}${JAEGER_BASEPATH}/api/services" | jq -c '.data | map(select(startswith("telemetrygen.")))'
     ```
 
@@ -1161,7 +1111,7 @@ Generate trace data in two namespaces, and query it with a ServiceAccount that c
     ```bash {name=install-mt-tracing-opensearch:verify-isolation}
     for ns in ${TEST_NS_A} ${TEST_NS_B}; do
       echo "== telemetrygen.${ns}"
-      curl -sS --cacert platform-ca.crt -H "Authorization: Bearer ${TOKEN}" \
+      curl -k -sS -H "Authorization: Bearer ${TOKEN}" \
         "${PLATFORM_URL}${JAEGER_BASEPATH}/api/traces?service=telemetrygen.${ns}&lookback=1h&limit=1" \
         | jq -c '.data[0] | {process: [.processes[].tags[].key] | unique, span: [.spans[].tags[].key] | unique}'
     done
@@ -1230,12 +1180,6 @@ The platform Collector already routes spans to Jaeger by service through the `lo
         - name: gateway-oidc
           secret:
             secretName: ${JAEGER_INSTANCE_NAME}-gateway-oidc
-        - name: gateway-platform-ca
-          secret:
-            secretName: ${JAEGER_INSTANCE_NAME}-platform-ca
-            items:
-              - key: ca.crt
-                path: ca.crt
         - name: monitoring-credentials # [!code callout]
           secret:
             secretName: monitoring-credentials
