@@ -493,7 +493,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
         cluster: "${CLUSTER_NAME}"
         platform:
           url: "${PLATFORM_URL}"
-          insecureSkipVerify: true # [!code callout]
+          insecureSkipVerify: true
         backends:
           - name: jaeger
             type: jaeger
@@ -512,10 +512,9 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     <Callouts>
       1. The business port of the gateway. The Jaeger Service and the Ingress forward requests to this port.
       2. The operations port, which serves `/healthz`, `/readyz`, and `/metrics`. Do not expose it through the Ingress.
-      3. The gateway skips the verification of the platform certificate when it sends user credentials to the platform to authenticate them.
-      4. The query service of Jaeger in the same Pod, including the base path.
-      5. How the gateway processes spans of namespaces the user cannot access: `mask` (default), `drop`, or `keep`. See [Filtering Policies](./filtering-and-configuration.mdx#filtering-policies).
-      6. The built-in login, which redirects users who open the Jaeger UI in a browser to the platform login page. The client ID and secret are those of the platform, and the callback address is `${PLATFORM_URL}${JAEGER_BASEPATH}/oauth2/callback`.
+      3. The query service of Jaeger in the same Pod, including the base path.
+      4. How the gateway processes spans of namespaces the user cannot access: `mask` (default), `drop`, or `keep`. See [Filtering Policies](./filtering-and-configuration.mdx#filtering-policies).
+      5. The built-in login, which redirects users who open the Jaeger UI in a browser to the platform login page. The client ID and secret are those of the platform, and the callback address is `${PLATFORM_URL}${JAEGER_BASEPATH}/oauth2/callback`.
     </Callouts>
 
     The other fields use their default values. See [Gateway Configuration](./filtering-and-configuration.mdx#gateway-configuration) for all fields.
