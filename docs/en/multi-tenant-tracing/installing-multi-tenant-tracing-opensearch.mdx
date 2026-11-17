@@ -481,32 +481,25 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 10. Create a file named `gateway-config.yaml` with the following content:
 
     ```yaml title="gateway-config.yaml" {name=install-mt-tracing-opensearch:gateway-config-yaml}
-    apiVersion: v1
-    kind: ConfigMap
-    metadata:
-      name: ${JAEGER_INSTANCE_NAME}-gateway-config
-      namespace: ${JAEGER_NS}
-    data:
-      config.yaml: |
-        listen: ":4180" # [!code callout]
-        opsListen: ":8081" # [!code callout]
-        cluster: "${CLUSTER_NAME}"
-        platform:
-          url: "${PLATFORM_URL}"
-          insecureSkipVerify: true
-        backends:
-          - name: jaeger
-            type: jaeger
-            basePath: "${JAEGER_BASEPATH}"
-            upstream: "http://127.0.0.1:16686${JAEGER_BASEPATH}" # [!code callout]
-            filter:
-              otherNamespaceSpans: mask # [!code callout]
-            login: # [!code callout]
-              enabled: true
-              clientID: "${OIDC_CLIENT_ID}"
-              clientSecretFile: /etc/gateway/oidc/client_secret
-              cookieSecretFile: /etc/gateway/oidc/cookie_secret
-              externalURL: "${PLATFORM_URL}"
+    listen: ":4180" # [!code callout]
+    opsListen: ":8081" # [!code callout]
+    cluster: "${CLUSTER_NAME}"
+    platform:
+      url: "${PLATFORM_URL}"
+      insecureSkipVerify: true
+    backends:
+      - name: jaeger
+        type: jaeger
+        basePath: "${JAEGER_BASEPATH}"
+        upstream: "http://127.0.0.1:16686${JAEGER_BASEPATH}" # [!code callout]
+        filter:
+          otherNamespaceSpans: mask # [!code callout]
+        login: # [!code callout]
+          enabled: true
+          clientID: "${OIDC_CLIENT_ID}"
+          clientSecretFile: /etc/gateway/oidc/client_secret
+          cookieSecretFile: /etc/gateway/oidc/cookie_secret
+          externalURL: "${PLATFORM_URL}"
     ```
 
     <Callouts>
@@ -519,10 +512,13 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
     The other fields use their default values. See [Gateway Configuration](./filtering-and-configuration.mdx#gateway-configuration) for all fields.
 
-    Render the manifest with `envsubst` and apply it:
+    Render the file with `envsubst` and store it as `config.yaml` in the `${JAEGER_INSTANCE_NAME}-gateway-config` ConfigMap:
 
     ```bash {name=install-mt-tracing-opensearch:apply-gateway-config}
-    envsubst < gateway-config.yaml | kubectl apply -f -
+    kubectl create configmap ${JAEGER_INSTANCE_NAME}-gateway-config \
+      --namespace=${JAEGER_NS} \
+      --from-file=config.yaml=<(envsubst < gateway-config.yaml) \
+      --dry-run=client -o yaml | kubectl apply -f -
     ```
 
 11. Create a file named `jaeger.yaml` with the following content:
