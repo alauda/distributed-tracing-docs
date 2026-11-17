@@ -17,8 +17,9 @@ Installing multi-tenant tracing involves the following steps:
 3. Installing the Alauda Build of OpenTelemetry v2 Operator
 4. Deploying the Alauda Build of Jaeger v2 with the observability gateway
 5. Deploying the platform OpenTelemetry Collector
-6. Granting access to traces
-7. Verifying tenant isolation
+6. Verifying tenant isolation
+
+Which namespaces a user can view is controlled by Kubernetes RBAC. See [Granting Access to Traces](./granting-access-to-traces.mdx).
 
 :::note
 Starting in ACP 4.5, the following plugins have new names:
@@ -34,7 +35,7 @@ Search for the new names when you download the plugins from the Customer Portal.
 Multi-tenant tracing requires the Alauda Build of Jaeger v2 cluster plugin **v2.2.0 or later**. The plugin ships the container images required by the tracing components, including the observability gateway, and creates the following resources in the target cluster:
 
 - A ConfigMap named `jaeger-cluster-plugin-manifest` in the `cpaas-system` namespace. Later steps read the image addresses from this ConfigMap.
-- A ClusterRole named `jaeger-cluster-plugin-traces`, which grants `get` on the `traces` resource of the `tracing.alauda.io` API group. The gateway checks this permission to decide which namespaces a user can view. See [Granting Access to Traces](#granting-access-to-traces).
+- A ClusterRole named `jaeger-cluster-plugin-traces`, which grants `get` on the `traces` resource of the `tracing.alauda.io` API group. The gateway checks this permission to decide which namespaces a user can view. See [Granting Access to Traces](./granting-access-to-traces.mdx).
 
 ### Installing via the web console
 
@@ -1080,17 +1081,6 @@ Spans that cannot be associated with a Pod have no namespace, and only platform 
 
 :::note
 The service names in Jaeger, in the metrics generated from spans, and in alerts or dashboards based on them change to `<service>.<namespace>`. For example, the `checkout` service in the `shop` namespace appears as `checkout.shop`.
-:::
-
-## Granting Access to Traces \{#granting-access-to-traces}
-
-The gateway lets a user view the traces of a namespace when the user is allowed to `get` the `traces` resource of the `tracing.alauda.io` API group in that namespace. The `jaeger-cluster-plugin-traces` ClusterRole created by the cluster plugin grants this permission.
-
-- **Platform administrators** can view all traces.
-- **Built-in roles**: the ClusterRole is aggregated into the namespace administrator, namespace developer, and project administrator roles of the cluster. Users with these roles can view the traces of the namespaces the roles apply to, without further configuration.
-
-:::warning
-Uninstalling the cluster plugin deletes the `jaeger-cluster-plugin-traces` ClusterRole. Afterwards only platform administrators can view traces through the gateway.
 :::
 
 ## Verifying Tenant Isolation \{#verifying-tenant-isolation}
