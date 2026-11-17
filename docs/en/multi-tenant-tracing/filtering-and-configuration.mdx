@@ -30,22 +30,6 @@ Set the policy in the `filter.otherNamespaceSpans` field of the backend in the [
 | `drop` | Removed, together with the processes that no remaining span refers to. A trace without remaining spans is removed from search results, and a query for it by ID returns `404`, as Jaeger does for a trace that does not exist. |
 | `keep` | Returned unchanged. The gateway then only authenticates users. |
 
-### Endpoints
-
-The following table shows how the gateway processes each endpoint of the Jaeger Query API for users who are not platform administrators:
-
-| Endpoint | `mask` | `drop` | `keep` |
-|---|---|---|---|
-| Services: `/api/services`, `/api/v3/services` | Unchanged | Unchanged | Unchanged |
-| Operations: `/api/services/{service}/operations`, `/api/operations`, `/api/v3/operations` | Unchanged | Empty list for a service in a namespace the user cannot access | Unchanged |
-| Traces: `/api/traces`, `/api/traces/{id}`, `/api/v3/traces`, `/api/v3/traces/{id}` | Spans masked | Spans removed | Unchanged |
-| Trace summaries: `/api/v3/trace-summaries` | Unchanged | Services the user cannot access are removed, and the span and error counts are recalculated | Unchanged |
-| SPM metrics: `/api/metrics/latencies`, `/api/metrics/calls`, `/api/metrics/errors` | Series of services the user cannot access are removed | Same as `mask` | Unchanged |
-| Dependencies: `/api/dependencies`, `/api/deep-dependencies` | Empty result | Empty result | Empty result |
-| Other `/api/*` endpoints, such as archive, transform, and quality metrics | `403` | `403` | `403` |
-
-The Jaeger UI pages and static files are served to every authenticated user. A query for a service in a namespace the user cannot access does not fail: under `mask` it returns masked traces, and under `drop` it returns no results.
-
 ## Gateway Configuration \{#gateway-configuration}
 
 The gateway reads `config.yaml` from the `${JAEGER_INSTANCE_NAME}-gateway-config` ConfigMap when it starts. After you change the ConfigMap, restart the Jaeger Pod:
