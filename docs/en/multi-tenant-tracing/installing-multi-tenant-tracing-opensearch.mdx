@@ -237,10 +237,6 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     export JAEGER_BASEPATH="/clusters/${CLUSTER_NAME}/jaeger"
     ```
 
-    :::warning
-    If the cluster or the OpenSearch instance already serves another Jaeger instance, set `JAEGER_NS`, `JAEGER_ES_INDEX_PREFIX`, `JAEGER_ISM_POLICY`, and `JAEGER_BASEPATH` to values that differ from those of the existing instance. Otherwise the two instances share indices and the same UI address.
-    :::
-
 4. Create the Jaeger namespace and OpenSearch credentials Secret:
 
     ```bash {name=install-mt-tracing-opensearch:create-jaeger-ns-and-opensearch-secret}
