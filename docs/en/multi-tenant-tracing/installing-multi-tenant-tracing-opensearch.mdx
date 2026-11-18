@@ -842,7 +842,7 @@ curl -k -sS -o /dev/null -H 'Accept: text/html' \
   -w '%{http_code} %{redirect_url}\n' "${PLATFORM_URL}${JAEGER_BASEPATH}/"
 ```
 
-The output starts with `302`, followed by the address of the platform login page, such as `https://<platform address>/console-dex/auth?client_id=...`. Requests that do not come from a browser page and carry no valid credentials receive `401` instead. 
+The output starts with `302`, followed by the address of the platform login page, such as `https://<platform address>/console-dex/auth?client_id=...`. Requests that do not come from a browser page and carry no valid credentials receive `401` instead.
 */}
 
 Print the Jaeger UI URL, open it in a browser, and log in with your platform account:

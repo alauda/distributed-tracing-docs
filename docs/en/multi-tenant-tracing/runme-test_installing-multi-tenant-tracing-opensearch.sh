@@ -9,7 +9,9 @@
 #   TRACING_JAEGER_ES_INDEX_PREFIX  覆盖文档默认索引前缀 acp-${CLUSTER_NAME}
 #   TRACING_JAEGER_ISM_POLICY       覆盖文档默认 ISM 策略名 jaeger-ism-policy
 #                                   （多个集群共用一个 OpenSearch 时必须区分，否则互相覆盖）
-#   TRACING_MT_TEST_NS_A / _B       租户隔离验证的两个命名空间，默认 mt-tracing-a / mt-tracing-b
+#   TRACING_MT_TEST_NS_A / _B       租户隔离验证的两个命名空间，默认 mt-tracing-a / mt-tracing-b。
+#                                   须为不存在的命名空间：脚本只复用带本测试标签的残留，
+#                                   cleanup 只删除这两个且带标签的命名空间
 #   TRACING_TEST_SPM                是否测试 SPM 章节，默认 true
 
 set -e
@@ -115,15 +117,38 @@ _mt_load_env() {
     export TEST_NS_B="${TRACING_MT_TEST_NS_B:-mt-tracing-b}"
 }
 
+# 命名空间是否带本测试的标签（即由本测试创建）。kubectl 不允许名字与 -l 同用，故按标签列出再匹配名字
+_mt_ns_owned() {
+    kubectl get namespace -l "$MT_TEST_NS_LABEL" -o name 2>/dev/null | grep -qx "namespace/$1"
+}
+
+# 创建测试命名空间；已存在且不是本测试创建的则报错，避免 cleanup 误删
+_mt_create_test_ns() {
+    local ns="$1"
+    if kubectl get namespace "$ns" >/dev/null 2>&1; then
+        if _mt_ns_owned "$ns"; then
+            log_info "复用上次测试残留的命名空间 ${ns}"
+            return 0
+        fi
+        log_error "命名空间 ${ns} 已存在且不是本测试创建的，请用 TRACING_MT_TEST_NS_A / TRACING_MT_TEST_NS_B 指定不存在的命名空间"
+        return 1
+    fi
+    kubectl create namespace "$ns" || return 1
+    kubectl label namespace "$ns" "$MT_TEST_NS_LABEL" >/dev/null || return 1
+}
+
 # 租户隔离验证（文档 Verifying Tenant Isolation 及其注释块）
 _mt_verify_isolation() {
     log_header "租户隔离验证"
 
     log_info "步骤 17: 创建测试命名空间 ${TEST_NS_A} / ${TEST_NS_B}"
     local ns
+    if [ "$TEST_NS_A" = "$TEST_NS_B" ]; then
+        log_error "TEST_NS_A 与 TEST_NS_B 不能相同: ${TEST_NS_A}"
+        return 1
+    fi
     for ns in "$TEST_NS_A" "$TEST_NS_B"; do
-        kubectl get namespace "$ns" >/dev/null 2>&1 || kubectl create namespace "$ns" || return 1
-        kubectl label namespace "$ns" "$MT_TEST_NS_LABEL" --overwrite >/dev/null || return 1
+        _mt_create_test_ns "$ns" || return 1
     done
 
     log_info "步骤 17.1: 在两个命名空间部署 telemetrygen"
@@ -484,11 +509,19 @@ cleanup_installing_multi_tenant_tracing_opensearch() {
         return 1
     }
 
-    log_info "删除测试命名空间"
-    kubectl delete namespace -l "$MT_TEST_NS_LABEL" --ignore-not-found --wait=true --timeout=180s || {
-        log_error "删除测试命名空间失败"
-        return 1
-    }
+    # 只删本测试创建的两个命名空间：按名字删，且须带本测试标签
+    local ns
+    for ns in "$TEST_NS_A" "$TEST_NS_B"; do
+        if ! _mt_ns_owned "$ns"; then
+            log_info "命名空间 ${ns} 不存在或不是本测试创建的，跳过删除"
+            continue
+        fi
+        log_info "删除测试命名空间 ${ns}"
+        kubectl delete namespace "$ns" --wait=true --timeout=180s || {
+            log_error "删除测试命名空间 ${ns} 失败"
+            return 1
+        }
+    done
 
     log_success "测试资源清理完成"
     return 0
