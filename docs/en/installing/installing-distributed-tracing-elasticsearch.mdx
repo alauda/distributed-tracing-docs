@@ -677,6 +677,26 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
             check_interval: 1s
             limit_percentage: 80
             spike_limit_percentage: 20
+          resource/strip: # [!code callout]
+            attributes:
+              - action: delete
+                key: k8s.namespace.name
+              - action: delete
+                key: k8s.pod.name
+              - action: delete
+                key: k8s.pod.uid
+              - action: delete
+                key: k8s.pod.ip
+              - action: delete
+                key: k8s.deployment.name
+              - action: delete
+                key: k8s.statefulset.name
+              - action: delete
+                key: k8s.daemonset.name
+              - action: delete
+                key: k8s.job.name
+              - action: delete
+                key: k8s.cronjob.name
           k8s_attributes: # [!code callout]
             extract:
               metadata:
@@ -691,6 +711,14 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
             pod_association:
               - sources:
                   - from: connection
+          transform/service-ns: # [!code callout]
+            error_mode: ignore
+            trace_statements:
+              - context: resource
+                conditions:
+                  - attributes["k8s.namespace.name"] != nil
+                statements:
+                  - set(attributes["service.name"], Concat([attributes["service.name"], attributes["k8s.namespace.name"]], ".")) where not HasSuffix(attributes["service.name"], Concat([".", attributes["k8s.namespace.name"]], ""))
         exporters:
           debug: {}
           otlp_grpc/traces: # [!code callout]
@@ -706,7 +734,7 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
           pipelines:
             traces:
               receivers: [otlp, zipkin]
-              processors: [memory_limiter, k8s_attributes, batch] # [!code callout]
+              processors: [memory_limiter, resource/strip, k8s_attributes, transform/service-ns, batch] # [!code callout]
               exporters: [debug, otlp_grpc/traces]
             metrics:
               receivers: [otlp]
@@ -727,9 +755,11 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
       2. Resource requests and limits for the Collector container. Adjust based on your expected trace throughput.
       3. Enables the Operator to automatically create `ServiceMonitor` resources for the Collector's metrics endpoint.
       4. The OTLP receiver accepts trace data over gRPC (port `4317`) and HTTP (port `4318`) from instrumented applications.
-      5. The `k8s_attributes` processor identifies the sending Pod by the source IP address of the connection and records its namespace, Pod name, and the name of the Deployment, StatefulSet, DaemonSet, Job, or CronJob that owns it. It does not overwrite an attribute that the sender already set. The Operator creates the ClusterRole and ClusterRoleBinding that this processor requires.
-      6. The `otlp_grpc/traces` exporter forwards received traces to the Jaeger collector service. The endpoint is derived from the Jaeger instance name and namespace.
-      7. The trace pipeline receives data via OTLP and Zipkin, processes it through `memory_limiter`, `k8s_attributes`, and `batch`, and exports to both the `debug` exporter (for logging) and `otlp_grpc/traces` (for forwarding to Jaeger). Keep `k8s_attributes` before `batch`: after batching, the Collector no longer knows which connection a span came from.
+      5. The `resource/strip` processor deletes the namespace, Pod, and workload attributes reported by the sender, so that a sender cannot claim another namespace or workload. Keep this list consistent with the attributes that the `k8s_attributes` processor records, because that processor does not overwrite an attribute that the sender already set.
+      6. The `k8s_attributes` processor identifies the sending Pod by the source IP address of the connection and records its namespace, Pod name, and the name of the Deployment, StatefulSet, DaemonSet, Job, or CronJob that owns it. The Operator creates the ClusterRole and ClusterRoleBinding that this processor requires.
+      7. The `transform/service-ns` processor renames each service to `<service>.<namespace>`, so that services with the same name in different namespaces stay apart. Service names that already end with `.<namespace>`, such as those of service mesh proxies, stay unchanged.
+      8. The `otlp_grpc/traces` exporter forwards received traces to the Jaeger collector service. The endpoint is derived from the Jaeger instance name and namespace.
+      9. The trace pipeline receives data via OTLP and Zipkin, processes it through the processors above, and exports to both the `debug` exporter (for logging) and `otlp_grpc/traces` (for forwarding to Jaeger). Keep this processor order: `resource/strip` must run before `k8s_attributes`, `transform/service-ns` after it, and `batch` last, because after batching the Collector no longer knows which connection a span came from.
     </Callouts>
 
     :::note The OTLP gRPC exporter is named `otlp_grpc`
@@ -761,7 +791,7 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
     If they are missing, the Operator is not allowed to create RBAC resources, and the spans have no Kubernetes attributes.
 
 :::note
-The `k8s_attributes` processor finds the sending Pod only if the Collector sees the IP address of that Pod. Spans carry the attributes of the forwarder, or no Kubernetes attributes at all, when they pass through another Collector or agent, through a service mesh sidecar injected into the Collector Pod, or through source NAT, such as a `NodePort` or `LoadBalancer` Service with `externalTrafficPolicy: Cluster`, and when they come from Pods that use the host network.
+The `k8s_attributes` processor finds the sending Pod only if the Collector sees the IP address of that Pod. Spans carry the attributes and namespace suffix of the forwarder, or no Kubernetes attributes and no suffix at all, when they pass through another Collector or agent, through a service mesh sidecar injected into the Collector Pod, or through source NAT, such as a `NodePort` or `LoadBalancer` Service with `externalTrafficPolicy: Cluster`, and when they come from Pods that use the host network.
 :::
 
 ## Verification \{#verification}
@@ -804,7 +834,7 @@ After installing all components, verify the end-to-end tracing pipeline by gener
 
 2. Open the Jaeger UI at `<platform-url>/clusters/<cluster-name>/jaeger`. 
 
-    Select the `telemetrygen` service from the **Service** dropdown and click **Find Traces** to verify that the generated traces are visible. Open one of the traces: the process of the `telemetrygen` service lists the `k8s.namespace.name` and `k8s.pod.name` tags that the `k8s_attributes` processor recorded.
+    Select the `telemetrygen.<JAEGER_NS>` service, such as `telemetrygen.jaeger-system`, from the **Service** dropdown and click **Find Traces** to verify that the generated traces are visible. Open one of the traces: the process of the service lists the `k8s.namespace.name` and `k8s.pod.name` tags that the `k8s_attributes` processor recorded.
 
     Run the following command to print the Jaeger UI URL:
 
@@ -989,7 +1019,7 @@ To run SPM in high availability, increase `spec.replicas` on the `otel` and `${J
 
 After enabling SPM, you can verify it by deploying the `telemetrygen` test client as described in the [Verification](#verification) section above. 
 
-Once traces are generated, navigate to the **Monitor** tab in the Jaeger UI to view the aggregated RED metrics for the `telemetrygen` service.
+Once traces are generated, navigate to the **Monitor** tab in the Jaeger UI to view the aggregated RED metrics for the `telemetrygen.<JAEGER_NS>` service.
 
 ## Uninstalling
 

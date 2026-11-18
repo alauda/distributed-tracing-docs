@@ -14,7 +14,7 @@
 # 附加验证: TRACING_VERIFY_TRACE_QUERY=true 时，步骤 19.1 走 ACP 的 Service 代理查
 #           Jaeger v3 Query API，断言调用链真能查到（默认关闭；两篇安装文档共用
 #           docs-runme-tests/projects/tracing/trace-query.sh）。先按服务名 jaeger 查
-#           一次，跑过 telemetrygen 时再按 telemetrygen 查一次；SPM 章节重新部署
+#           一次，跑过 telemetrygen 时再按 telemetrygen.<命名空间> 查一次（transform/service-ns 加的后缀）；SPM 章节重新部署
 #           telemetrygen 之后（步骤 27.1）再验一次。
 
 set -e
@@ -169,7 +169,7 @@ _test_spm() {
         # 两处都可能把 span 的写入通路弄坏——而 SPM 自身的 spanmetrics 指标走的是
         # monitoring 存储，指标正常并不能说明调用链还写得进存储、查得出来。
         log_info "步骤 27.1: 验证 SPM 阶段 telemetrygen 的调用链可查询"
-        _verify_trace_query telemetrygen || return 1
+        _verify_trace_query "telemetrygen.${JAEGER_NS}" || return 1
     fi
 
     # 输出 Jaeger UI 访问地址
@@ -504,12 +504,12 @@ EOF
     # 查两次，覆盖两条不同的通路：
     #   - 服务 jaeger：Jaeger 自身的调用链，跳过 telemetrygen 时也一定有，用它保证
     #     无论怎么编排都至少验一次「写得进、查得出」；
-    #   - 服务 telemetrygen：只在真跑过 telemetrygen 时查，走的是业务侧 span 经
+    #   - 服务 telemetrygen.<命名空间>：只在真跑过 telemetrygen 时查，走的是业务侧 span 经
     #     OTel Collector → Jaeger → 存储的完整通路——正是文档 Verification 里
     #     「在 Service 下拉框选 telemetrygen 再 Find Traces」那一步的自动化。
     _verify_trace_query || return 1
     if [ "${SKIP_TELEMETRYGEN:-false}" != "true" ]; then
-        _verify_trace_query telemetrygen || return 1
+        _verify_trace_query "telemetrygen.${JAEGER_NS}" || return 1
     fi
 
     # 步骤 20-27:（可选）Service Performance Monitoring (SPM) 章节

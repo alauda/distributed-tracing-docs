@@ -1291,14 +1291,3 @@ Generate trace data as described in [Verifying Tenant Isolation](#verifying-tena
     ```
 
     The Operator deletes the ClusterRole and ClusterRoleBinding of the platform Collector together with the `otel` Collector.
-
-3. (Optional) If no other Collector needs the Operator to create RBAC resources, delete the `ClusterRole` and `ClusterRoleBinding` created in [Granting the OpenTelemetry Operator Permission to Create RBAC Resources](#granting-the-opentelemetry-operator-permission-to-create-rbac-resources):
-
-    ```bash {name=install-mt-tracing-opensearch:delete-operator-rbac}
-    kubectl delete clusterrolebinding generate-processors-rbac --ignore-not-found
-    kubectl delete clusterrole generate-processors-rbac --ignore-not-found
-    ```
-
-    :::warning
-    Delete the platform Collector **before** you remove these permissions. Without them, the Operator cannot delete the RBAC resources it created for the Collector, and those resources are left behind in the cluster.
-    :::
