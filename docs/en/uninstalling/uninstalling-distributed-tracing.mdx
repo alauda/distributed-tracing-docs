@@ -12,7 +12,7 @@ Uninstalling the Alauda Container Platform Distributed Tracing involves deleting
 - Jaeger v2 (`jaeger`) instance
 - Jaeger namespace
 
-Optionally, you can also uninstall the Alauda Container Platform Application Observability Operator and the Alauda Container Platform Distributed Tracing cluster plugin if they are no longer needed.
+Optionally, you can also revoke the permission of the Alauda Container Platform Application Observability Operator to create RBAC resources, and uninstall the Operator and the Alauda Container Platform Distributed Tracing cluster plugin if they are no longer needed.
 
 ## Uninstalling via the web console
 
@@ -50,6 +50,19 @@ kubectl delete namespace jaeger-system
 
 :::note
 Replace `jaeger-system` with the namespace you used during installation if it differs from the default.
+:::
+
+### (Optional) Revoke the permission of the Operator to create RBAC resources
+
+If no other Collector needs the Operator to create RBAC resources, delete the `ClusterRole` and `ClusterRoleBinding` that you created when you granted the Operator this permission during installation, using the CLI:
+
+```bash
+kubectl delete clusterrolebinding generate-processors-rbac --ignore-not-found
+kubectl delete clusterrole generate-processors-rbac --ignore-not-found
+```
+
+:::warning
+Delete the `otel` Collector **before** you remove these permissions. Without them, the Operator cannot delete the ClusterRole and ClusterRoleBinding it created for the Collector, and those resources are left behind in the cluster.
 :::
 
 ### (Optional) Uninstall the Alauda Container Platform Application Observability Operator
@@ -139,6 +152,26 @@ kubectl delete namespace ${JAEGER_NS}
 ```text {name=uninstall-tracing:delete-jaeger-ns-output}
 namespace "jaeger-system" deleted
 ```
+
+### (Optional) Revoke the permission of the Operator to create RBAC resources
+
+If no other Collector needs the Operator to create RBAC resources, delete the `ClusterRole` and `ClusterRoleBinding` that you created when you granted the Operator this permission during installation:
+
+```bash {name=uninstall-tracing:delete-operator-rbac}
+kubectl delete clusterrolebinding generate-processors-rbac --ignore-not-found
+kubectl delete clusterrole generate-processors-rbac --ignore-not-found
+```
+
+**Example output**
+
+```text {name=uninstall-tracing:delete-operator-rbac-output}
+clusterrolebinding.rbac.authorization.k8s.io "generate-processors-rbac" deleted
+clusterrole.rbac.authorization.k8s.io "generate-processors-rbac" deleted
+```
+
+:::warning
+Delete the `otel` Collector **before** you remove these permissions. Without them, the Operator cannot delete the ClusterRole and ClusterRoleBinding it created for the Collector, and those resources are left behind in the cluster.
+:::
 
 ### (Optional) Uninstall the Alauda Container Platform Application Observability Operator
 
