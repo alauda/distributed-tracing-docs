@@ -7,9 +7,10 @@ weight: 10
 Installing the Alauda Container Platform Distributed Tracing platform involves the following steps:
 
 1. Installing the Alauda Container Platform Distributed Tracing cluster plugin
-2. Installing the Alauda Container Platform Application Observability Operator
-3. Deploying Jaeger
-4. Deploying the OpenTelemetry Collector to forward traces to Jaeger
+2. Granting the Alauda Container Platform Application Observability Operator permission to create RBAC resources
+3. Installing the Alauda Container Platform Application Observability Operator
+4. Deploying Jaeger
+5. Deploying the OpenTelemetry Collector to forward traces to Jaeger
 
 :::note
 Starting in ACP 4.5, the following plugins have new names:
@@ -78,6 +79,68 @@ Cluster plugins are installed by creating a `ModuleInfo` resource **in the `glob
     ```bash {name=install-tracing-opensearch:verify-jaeger-plugin-configmap}
     kubectl get configmap jaeger-cluster-plugin-manifest -n cpaas-system
     ```
+
+## Granting the Alauda Container Platform Application Observability Operator Permission to Create RBAC Resources \{#granting-the-opentelemetry-operator-permission-to-create-rbac-resources}
+
+The OpenTelemetry Collector uses the `k8s_attributes` processor to record the namespace, Pod, and workload of the sender on every span. This processor requires permission to read Pods, Namespaces, and ReplicaSets across the cluster. The Alauda Container Platform Application Observability Operator creates the required ClusterRole and ClusterRoleBinding for the Collector automatically, but only after you allow it to manage cluster-level RBAC resources. For details, see <ExternalSiteLink name="opentelemetry" href="/installing/rbac-resources.html" children="Creating the Required RBAC Resources Automatically" />.
+
+Create the following resources **before** you install the Operator. If the Operator is already installed, create them and then restart the Operator as described in step 3.
+
+1. Create the `ClusterRole`:
+
+    ```bash {name=install-tracing-opensearch:create-operator-rbac-clusterrole}
+    kubectl apply -f - <<EOF
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: generate-processors-rbac
+    rules:
+    - apiGroups:
+      - rbac.authorization.k8s.io
+      resources:
+      - clusterrolebindings
+      - clusterroles
+      verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    EOF
+    ```
+
+2. Create the `ClusterRoleBinding`, which binds the `ClusterRole` to the ServiceAccount of the Operator:
+
+    ```bash {name=install-tracing-opensearch:create-operator-rbac-clusterrolebinding}
+    kubectl apply -f - <<EOF
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: generate-processors-rbac
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: generate-processors-rbac
+    subjects:
+    - kind: ServiceAccount
+      name: opentelemetry-operator-controller-manager
+      namespace: opentelemetry-operator2
+    EOF
+    ```
+
+    :::note
+    `opentelemetry-operator2` is the namespace the Operator is installed in by default. If you install the Operator in another namespace, change `subjects[0].namespace` accordingly.
+    :::
+
+3. If the Operator was already running before you created these resources, restart it so that it picks up the new permissions:
+
+    ```bash {name=install-tracing-opensearch:restart-operator}
+    kubectl delete pod -n opentelemetry-operator2 -l app.kubernetes.io/name=opentelemetry-operator
+    ```
+
+    Skip this step if you created the resources before installing the Operator.
 
 ## Installing the Alauda Container Platform Application Observability Operator \{#installing-the-alauda-build-of-opentelemetry-v2-operator}
 
@@ -615,6 +678,13 @@ echo "Jaeger UI: ${PLATFORM_URL}${JAEGER_BASEPATH}"
 
 After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receive trace data from instrumented applications and forward it to Jaeger.
 
+**Prerequisites**
+
+- The Alauda Container Platform Application Observability Operator is allowed to create RBAC resources. See [Granting the Alauda Container Platform Application Observability Operator Permission to Create RBAC Resources](#granting-the-opentelemetry-operator-permission-to-create-rbac-resources).
+- You create the Collector as a cluster administrator. Before the Operator creates the ClusterRole for the Collector, it checks that the user who submits the `OpenTelemetryCollector` resource holds the same permissions, and rejects the resource otherwise.
+
+**Procedure**
+
 1. Create a file named `otel-collector.yaml` with the following content:
 
     ```yaml title="otel-collector.yaml" {name=install-tracing-opensearch:otel-collector-yaml}
@@ -653,6 +723,20 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
             check_interval: 1s
             limit_percentage: 80
             spike_limit_percentage: 20
+          k8s_attributes: # [!code callout]
+            extract:
+              metadata:
+                - k8s.namespace.name
+                - k8s.pod.name
+                - k8s.deployment.name
+                - k8s.statefulset.name
+                - k8s.daemonset.name
+                - k8s.job.name
+                - k8s.cronjob.name
+            passthrough: false
+            pod_association:
+              - sources:
+                  - from: connection
         exporters:
           debug: {}
           otlp_grpc/traces: # [!code callout]
@@ -668,8 +752,8 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
           pipelines:
             traces:
               receivers: [otlp, zipkin]
-              processors: [memory_limiter, batch]
-              exporters: [debug, otlp_grpc/traces] # [!code callout]
+              processors: [memory_limiter, k8s_attributes, batch] # [!code callout]
+              exporters: [debug, otlp_grpc/traces]
             metrics:
               receivers: [otlp]
               processors: [memory_limiter, batch]
@@ -689,8 +773,9 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
       2. Resource requests and limits for the Collector container. Adjust based on your expected trace throughput.
       3. Enables the Operator to automatically create `ServiceMonitor` resources for the Collector's metrics endpoint.
       4. The OTLP receiver accepts trace data over gRPC (port `4317`) and HTTP (port `4318`) from instrumented applications.
-      5. The `otlp_grpc/traces` exporter forwards received traces to the Jaeger collector service. The endpoint is derived from the Jaeger instance name and namespace.
-      6. The trace pipeline receives data via OTLP and Zipkin, processes it through `memory_limiter` and `batch`, and exports to both the `debug` exporter (for logging) and `otlp_grpc/traces` (for forwarding to Jaeger).
+      5. The `k8s_attributes` processor identifies the sending Pod by the source IP address of the connection and records its namespace, Pod name, and the name of the Deployment, StatefulSet, DaemonSet, Job, or CronJob that owns it. It does not overwrite an attribute that the sender already set. The Operator creates the ClusterRole and ClusterRoleBinding that this processor requires.
+      6. The `otlp_grpc/traces` exporter forwards received traces to the Jaeger collector service. The endpoint is derived from the Jaeger instance name and namespace.
+      7. The trace pipeline receives data via OTLP and Zipkin, processes it through `memory_limiter`, `k8s_attributes`, and `batch`, and exports to both the `debug` exporter (for logging) and `otlp_grpc/traces` (for forwarding to Jaeger). Keep `k8s_attributes` before `batch`: after batching, the Collector no longer knows which connection a span came from.
     </Callouts>
 
     :::note The OTLP gRPC exporter is named `otlp_grpc`
@@ -709,6 +794,19 @@ After Jaeger v2 is running, deploy an OpenTelemetry Collector instance to receiv
     kubectl rollout status deployment/otel-collector \
       -n ${JAEGER_NS} --timeout=180s
     ```
+
+4. Verify that the Operator created the ClusterRole and ClusterRoleBinding for the Collector:
+
+    ```bash {name=install-tracing-opensearch:verify-otel-collector-rbac}
+    kubectl get clusterrole otel-${JAEGER_NS}-cluster-role
+    kubectl get clusterrolebinding otel-${JAEGER_NS}-collector
+    ```
+
+    If they are missing, the Operator is not allowed to create RBAC resources, and the spans have no Kubernetes attributes.
+
+:::note
+The `k8s_attributes` processor finds the sending Pod only if the Collector sees the IP address of that Pod. Spans carry the attributes of the forwarder, or no Kubernetes attributes at all, when they pass through another Collector or agent, through a service mesh sidecar injected into the Collector Pod, or through source NAT, such as a `NodePort` or `LoadBalancer` Service with `externalTrafficPolicy: Cluster`, and when they come from Pods that use the host network.
+:::
 
 ## Verification \{#verification}
 
@@ -750,7 +848,7 @@ After installing all components, verify the end-to-end tracing pipeline by gener
 
 2. Open the Jaeger UI at `<platform-url>/clusters/<cluster-name>/jaeger`. 
 
-    Select the `telemetrygen` service from the **Service** dropdown and click **Find Traces** to verify that the generated traces are visible. 
+    Select the `telemetrygen` service from the **Service** dropdown and click **Find Traces** to verify that the generated traces are visible. Open one of the traces: the process of the `telemetrygen` service lists the `k8s.namespace.name` and `k8s.pod.name` tags that the `k8s_attributes` processor recorded.
 
     Run the following command to print the Jaeger UI URL:
 

@@ -2,6 +2,7 @@
 # Alauda Container Platform Distributed Tracing 安装文档测试脚本（OpenSearch 后端）
 # 对应文档: docs/en/installing/installing-distributed-tracing-opensearch.mdx
 # 覆盖范围: 「Installing the Alauda Container Platform Distributed Tracing Cluster Plugin」（仅 CLI 安装方案）、
+#           「Granting the ... Operator Permission to Create RBAC Resources」、
 #           「Deploying Jaeger」（含 ISM policy 与 jaeger-es-rollover init）、
 #           「Deploying the OpenTelemetry Collector」「Verification」「(Optional) SPM」章节。
 #
@@ -46,6 +47,16 @@ _in_otel_repo() {
     local rc=$?
     popd >/dev/null
     return $rc
+}
+
+# 严格执行多命令代码块：首条失败即中断（runme run 只回传最后一条命令的返回码）
+_run_strict() {
+    local content
+    content=$(runme print "$1") || {
+        log_error "无法获取代码块内容: $1"
+        return 1
+    }
+    bash -ec "$content"
 }
 
 # ISM policy 的两个辅助函数（清理遗留 policy、等待 ISM 接管写索引）已抽到
@@ -216,6 +227,43 @@ test_installing_distributed_tracing_opensearch() {
         log_error "Jaeger v2 集群插件安装失败"
         return 1
     }
+
+    # 步骤 1.1-1.2: 授权 Operator 创建 RBAC 资源；Operator 已在运行时按文档重启
+    local operator_ns="opentelemetry-operator2"
+    local operator_running=false
+    if kubectl get pod -n "$operator_ns" -l app.kubernetes.io/name=opentelemetry-operator \
+        -o name 2>/dev/null | grep -q .; then
+        operator_running=true
+    fi
+
+    log_info "步骤 1.1: 授权 OTel Operator 创建 RBAC 资源"
+    runme run install-tracing-opensearch:create-operator-rbac-clusterrole || {
+        log_error "创建 ClusterRole generate-processors-rbac 失败"
+        return 1
+    }
+    runme run install-tracing-opensearch:create-operator-rbac-clusterrolebinding || {
+        log_error "创建 ClusterRoleBinding generate-processors-rbac 失败"
+        return 1
+    }
+
+    if [ "$operator_running" = true ]; then
+        log_info "步骤 1.2: Operator 已在运行，重启以加载新权限"
+        runme run install-tracing-opensearch:restart-operator || {
+            log_error "重启 OTel Operator 失败"
+            return 1
+        }
+        kubectl rollout status deployment -n "$operator_ns" \
+            -l app.kubernetes.io/name=opentelemetry-operator --timeout=180s || {
+            log_error "等待 OTel Operator 重启就绪失败"
+            return 1
+        }
+        retry_command "kubectl wait pod -n ${operator_ns} -l app.kubernetes.io/name=opentelemetry-operator --for=condition=Ready --timeout=60s" 6 10 || {
+            log_error "等待 OTel Operator Pod 就绪失败"
+            return 1
+        }
+    else
+        log_info "步骤 1.2: Operator 尚未安装，按文档跳过重启"
+    fi
 
     # 步骤 2: 安装 Alauda Container Platform Application Observability Operator（跨仓库前置依赖）
     log_info "步骤 2: 安装 OpenTelemetry v2 Operator"
@@ -420,6 +468,25 @@ test_installing_distributed_tracing_opensearch() {
         log_error "等待 OpenTelemetry Collector 就绪失败"
         return 1
     }
+
+    # 步骤 18.1: 校验 Operator 已为 Collector 创建 RBAC（k8s_attributes 依赖）
+    log_info "步骤 18.1: 校验 Collector 的 ClusterRole 与 ClusterRoleBinding"
+    local rbac_output
+    rbac_output=$(_run_strict install-tracing-opensearch:verify-otel-collector-rbac 2>&1) || {
+        log_error "Collector 的 RBAC 资源不存在"
+        log_error "输出: $rbac_output"
+        return 1
+    }
+    if ! __cmp_lines "$rbac_output" "$(cat <<EOF
++ otel-${JAEGER_NS}-cluster-role
++ otel-${JAEGER_NS}-collector
+EOF
+)"; then
+        log_error "Collector 的 RBAC 校验失败"
+        log_error "实际输出: $rbac_output"
+        return 1
+    fi
+    log_success "Collector 的 RBAC 校验通过"
 
     # 步骤 19: 部署 telemetrygen 生成测试 trace（内含 wait/delete）
     # --skip-telemetrygen 时跳过：用于 mesh 等仅需安装调用链组件、由

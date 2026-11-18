@@ -133,6 +133,15 @@ test_uninstalling_distributed_tracing() {
     log_info "步骤 4: 删除 Jaeger 命名空间"
     _delete_and_verify "删除 Jaeger 命名空间" uninstall-tracing:delete-jaeger-ns || return 1
 
+    # 步骤 4.1: (可选) 回收 Operator 创建 RBAC 的权限
+    # 与 Operator 同进退：--skip-operator-and-crds 时保留，供其他 Collector 继续使用。
+    if [ "${SKIP_OPERATOR_AND_CRDS:-false}" = "true" ]; then
+        log_info "步骤 4.1: 跳过回收 Operator 的 RBAC 权限 (--skip-operator-and-crds)"
+    else
+        log_info "步骤 4.1: 回收 Operator 创建 RBAC 的权限"
+        _delete_and_verify "回收 Operator 的 RBAC 权限" uninstall-tracing:delete-operator-rbac || return 1
+    fi
+
     # 步骤 5-6: (可选) 删除 OTel Operator subscription 与 OpenTelemetry CRDs
     # 受 --skip-operator-and-crds 控制：传入时保留 Operator 与 CRDs 以便后续测试复用。
     if [ "${SKIP_OPERATOR_AND_CRDS:-false}" = "true" ]; then
