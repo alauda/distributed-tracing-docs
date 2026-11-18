@@ -484,12 +484,6 @@ cleanup_installing_multi_tenant_tracing_opensearch() {
         return 1
     }
 
-    log_info "删除 OTel Operator 创建 RBAC 的授权"
-    _mt_run_strict "${MT_PREFIX}:delete-operator-rbac" || {
-        log_error "删除 generate-processors-rbac 失败"
-        return 1
-    }
-
     log_info "删除测试命名空间"
     kubectl delete namespace -l "$MT_TEST_NS_LABEL" --ignore-not-found --wait=true --timeout=180s || {
         log_error "删除测试命名空间失败"

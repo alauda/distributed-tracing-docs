@@ -2,6 +2,7 @@
 # Alauda Container Platform Distributed Tracing 安装文档测试脚本
 # 对应文档: docs/en/installing/installing-distributed-tracing-elasticsearch.mdx
 # 覆盖范围: 「Installing the Alauda Container Platform Distributed Tracing Cluster Plugin」（仅 CLI 安装方案）
+#           「Granting the ... Operator Permission to Create RBAC Resources」
 #           「Deploying Jaeger」「Deploying the OpenTelemetry
 #           Collector」「Verification」「(Optional) SPM」章节。
 # 前置步骤: TRACING_INSTALL_ES=true 且 PKG_LOG_CENTER_URL 非空时，步骤 0 自动安装
@@ -13,7 +14,7 @@
 # 附加验证: TRACING_VERIFY_TRACE_QUERY=true 时，步骤 19.1 走 ACP 的 Service 代理查
 #           Jaeger v3 Query API，断言调用链真能查到（默认关闭；两篇安装文档共用
 #           docs-runme-tests/projects/tracing/trace-query.sh）。先按服务名 jaeger 查
-#           一次，跑过 telemetrygen 时再按 telemetrygen 查一次；SPM 章节重新部署
+#           一次，跑过 telemetrygen 时再按 telemetrygen.<命名空间> 查一次（transform/service-ns 加的后缀）；SPM 章节重新部署
 #           telemetrygen 之后（步骤 27.1）再验一次。
 
 set -e
@@ -38,6 +39,16 @@ _in_otel_repo() {
     local rc=$?
     popd >/dev/null
     return $rc
+}
+
+# 严格执行多命令代码块：首条失败即中断（runme run 只回传最后一条命令的返回码）
+_run_strict() {
+    local content
+    content=$(runme print "$1") || {
+        log_error "无法获取代码块内容: $1"
+        return 1
+    }
+    bash -ec "$content"
 }
 
 # 部署 telemetrygen 生成测试 trace。
@@ -158,7 +169,7 @@ _test_spm() {
         # 两处都可能把 span 的写入通路弄坏——而 SPM 自身的 spanmetrics 指标走的是
         # monitoring 存储，指标正常并不能说明调用链还写得进存储、查得出来。
         log_info "步骤 27.1: 验证 SPM 阶段 telemetrygen 的调用链可查询"
-        _verify_trace_query telemetrygen || return 1
+        _verify_trace_query "telemetrygen.${JAEGER_NS}" || return 1
     fi
 
     # 输出 Jaeger UI 访问地址
@@ -215,6 +226,43 @@ test_installing_distributed_tracing_elasticsearch() {
         log_error "Jaeger v2 集群插件安装失败"
         return 1
     }
+
+    # 步骤 1.1-1.2: 授权 Operator 创建 RBAC 资源；Operator 已在运行时按文档重启
+    local operator_ns="opentelemetry-operator2"
+    local operator_running=false
+    if kubectl get pod -n "$operator_ns" -l app.kubernetes.io/name=opentelemetry-operator \
+        -o name 2>/dev/null | grep -q .; then
+        operator_running=true
+    fi
+
+    log_info "步骤 1.1: 授权 OTel Operator 创建 RBAC 资源"
+    runme run install-tracing-elasticsearch:create-operator-rbac-clusterrole || {
+        log_error "创建 ClusterRole generate-processors-rbac 失败"
+        return 1
+    }
+    runme run install-tracing-elasticsearch:create-operator-rbac-clusterrolebinding || {
+        log_error "创建 ClusterRoleBinding generate-processors-rbac 失败"
+        return 1
+    }
+
+    if [ "$operator_running" = true ]; then
+        log_info "步骤 1.2: Operator 已在运行，重启以加载新权限"
+        runme run install-tracing-elasticsearch:restart-operator || {
+            log_error "重启 OTel Operator 失败"
+            return 1
+        }
+        kubectl rollout status deployment -n "$operator_ns" \
+            -l app.kubernetes.io/name=opentelemetry-operator --timeout=180s || {
+            log_error "等待 OTel Operator 重启就绪失败"
+            return 1
+        }
+        retry_command "kubectl wait pod -n ${operator_ns} -l app.kubernetes.io/name=opentelemetry-operator --for=condition=Ready --timeout=60s" 6 10 || {
+            log_error "等待 OTel Operator Pod 就绪失败"
+            return 1
+        }
+    else
+        log_info "步骤 1.2: Operator 尚未安装，按文档跳过重启"
+    fi
 
     # 步骤 2: 安装 Alauda Container Platform Application Observability Operator（跨仓库前置依赖）
     log_info "步骤 2: 安装 OpenTelemetry v2 Operator"
@@ -409,6 +457,25 @@ test_installing_distributed_tracing_elasticsearch() {
         return 1
     }
 
+    # 步骤 18.1: 校验 Operator 已为 Collector 创建 RBAC（k8s_attributes 依赖）
+    log_info "步骤 18.1: 校验 Collector 的 ClusterRole 与 ClusterRoleBinding"
+    local rbac_output
+    rbac_output=$(_run_strict install-tracing-elasticsearch:verify-otel-collector-rbac 2>&1) || {
+        log_error "Collector 的 RBAC 资源不存在"
+        log_error "输出: $rbac_output"
+        return 1
+    }
+    if ! __cmp_lines "$rbac_output" "$(cat <<EOF
++ otel-${JAEGER_NS}-cluster-role
++ otel-${JAEGER_NS}-collector
+EOF
+)"; then
+        log_error "Collector 的 RBAC 校验失败"
+        log_error "实际输出: $rbac_output"
+        return 1
+    fi
+    log_success "Collector 的 RBAC 校验通过"
+
     # 步骤 19: 部署 telemetrygen 生成测试 trace（内含 wait/delete）
     # --skip-telemetrygen 时跳过：用于 mesh 等仅需安装调用链组件、由
     # 业务流量产生 trace 而不依赖 telemetrygen 验证的编排场景。
@@ -437,12 +504,12 @@ test_installing_distributed_tracing_elasticsearch() {
     # 查两次，覆盖两条不同的通路：
     #   - 服务 jaeger：Jaeger 自身的调用链，跳过 telemetrygen 时也一定有，用它保证
     #     无论怎么编排都至少验一次「写得进、查得出」；
-    #   - 服务 telemetrygen：只在真跑过 telemetrygen 时查，走的是业务侧 span 经
+    #   - 服务 telemetrygen.<命名空间>：只在真跑过 telemetrygen 时查，走的是业务侧 span 经
     #     OTel Collector → Jaeger → 存储的完整通路——正是文档 Verification 里
     #     「在 Service 下拉框选 telemetrygen 再 Find Traces」那一步的自动化。
     _verify_trace_query || return 1
     if [ "${SKIP_TELEMETRYGEN:-false}" != "true" ]; then
-        _verify_trace_query telemetrygen || return 1
+        _verify_trace_query "telemetrygen.${JAEGER_NS}" || return 1
     fi
 
     # 步骤 20-27:（可选）Service Performance Monitoring (SPM) 章节
