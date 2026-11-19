@@ -1087,12 +1087,12 @@ Generate trace data in two namespaces, and compare what a platform administrator
     done
     ```
 
-4. Open the Jaeger UI at `${PLATFORM_URL}${JAEGER_BASEPATH}` and log in as a platform administrator. Find the traces of `telemetrygen.<namespace A>` and `telemetrygen.<namespace B>`, and open one trace of each. The spans of both services keep all their tags: the process lists `k8s.namespace.name` and `k8s.pod.name`, and the spans list tags such as `network.peer.address` and `service.peer.name`.
+4. Open the Jaeger UI at `${PLATFORM_URL}${JAEGER_BASEPATH}` and log in as a platform administrator. Find the traces of `telemetrygen.<namespace A>` and `telemetrygen.<namespace B>`, and open one trace of each. The spans of both services keep all their tags. When you expand a span, the `Process` section lists `k8s.namespace.name` and `k8s.pod.name`, and the `Tags` section lists tags such as `network.peer.address` and `service.peer.name`.
 
 5. Log out, and log in to the Jaeger UI as the test user:
     - The **Service** list contains both services, because the service list is not filtered.
     - The spans of `telemetrygen.<namespace A>` keep all their tags, as in the previous step.
-    - The spans of `telemetrygen.<namespace B>` are masked: the process lists only `k8s.namespace.name`, and the spans list only status tags, such as `span.kind`.
+    - The spans of `telemetrygen.<namespace B>` are masked: the `Process` section lists only `k8s.namespace.name`, and the `Tags` section lists only status tags, such as `span.kind`.
 
 6. Delete the test user. See <ExternalSiteLink name="acp" href="/security/users_and_roles/user/functions/manage_user.html" children="User Management" />.
 
