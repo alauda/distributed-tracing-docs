@@ -89,7 +89,7 @@ Jaeger never creates a lifecycle policy. `jaeger-es-rollover init` only verifies
     Restrict the `ism_template` patterns to the numbered rollover indices with a `-0*` suffix. A pattern such as `jaeger-span-*` also matches date-suffixed indices created afterwards, for example after a rollback to `rotation.periodic`. ISM then takes those indices over and fails on them, because they are not attached to a rollover alias.
     :::
 
-    A complete policy covering all four index types is shown in [Installing Alauda Container Platform Distributed Tracing with OpenSearch](../../installing/installing-distributed-tracing-opensearch.mdx#deploying-the-alauda-build-of-jaeger-v2).
+    A complete policy covering all four index types is shown in [Installing Alauda Container Platform Distributed Tracing with OpenSearch](../../installing/installing-distributed-tracing-opensearch.mdx#deploying-jaeger).
 
 2. Run the initializer with `ES_USE_ILM=true` and `ES_ILM_POLICY_NAME` set to the policy name. These variables keep their `ES_` prefix on OpenSearch:
 

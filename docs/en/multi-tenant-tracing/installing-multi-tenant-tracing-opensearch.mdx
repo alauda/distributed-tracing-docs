@@ -12,10 +12,10 @@ In a multi-tenant installation, the observability gateway takes the place of the
 
 Installing multi-tenant tracing involves the following steps:
 
-1. Installing the Alauda Build of Jaeger v2 cluster plugin
+1. Installing the Alauda Container Platform Distributed Tracing cluster plugin
 2. Granting the OpenTelemetry Operator permission to create RBAC resources
 3. Installing the Alauda Container Platform Application Observability Operator
-4. Deploying the Alauda Build of Jaeger v2 with the observability gateway
+4. Deploying the Alauda Container Platform Distributed Tracing with the observability gateway
 5. Deploying the platform OpenTelemetry Collector
 6. Verifying tenant isolation
 
@@ -30,9 +30,9 @@ Starting in ACP 4.5, the following plugins have new names:
 Search for the new names when you download the plugins from the Customer Portal. A plugin package published before the rename still shows the former name in the platform after you upload it.
 :::
 
-## Installing the Alauda Build of Jaeger v2 Cluster Plugin \{#installing-the-alauda-build-of-jaeger-v2-cluster-plugin}
+## Installing the Alauda Container Platform Distributed Tracing Cluster Plugin \{#installing-the-alauda-container-platform-distributed-tracing-cluster-plugin}
 
-Multi-tenant tracing requires the Alauda Build of Jaeger v2 cluster plugin **v2.2.0 or later**. The plugin ships the container images required by the tracing components, including the observability gateway, and creates the following resources in the target cluster:
+Multi-tenant tracing requires the Alauda Container Platform Distributed Tracing cluster plugin **v2.2.0 or later**. The plugin ships the container images required by the tracing components, including the observability gateway, and creates the following resources in the target cluster:
 
 - A ConfigMap named `jaeger-cluster-plugin-manifest` in the `cpaas-system` namespace. Later steps read the image addresses from this ConfigMap.
 - A ClusterRole named `tracing.alauda.io:traces-viewer`, which grants `get` on the `traces` resource of the `tracing.alauda.io` API group. The gateway checks this permission to decide which namespaces a user can view. See [Granting Access to Traces](./granting-access-to-traces.mdx).
@@ -170,7 +170,7 @@ Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/ins
 
 Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/installing/install-opentelemetry.html#installing-via-the-cli" children="Installing via the CLI" /> section of the Alauda Container Platform Application Observability documentation.
 
-## Deploying the Alauda Build of Jaeger v2 with the Observability Gateway \{#deploying-the-alauda-build-of-jaeger-v2-with-the-observability-gateway}
+## Deploying the Alauda Container Platform Distributed Tracing with the Observability Gateway \{#deploying-the-alauda-container-platform-distributed-tracing-with-the-observability-gateway}
 
 Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by the Alauda Container Platform Application Observability Operator. It uses a [backend storage](../configuration/storage-backends/index.mdx) and runs the observability gateway as a sidecar. The gateway authenticates users through Alauda Container Platform and authorizes every query against the Kubernetes RBAC of the cluster.
 
@@ -194,7 +194,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
     Replace the placeholder values with your actual OpenSearch credentials.
 
-2. Retrieve platform configuration from the cluster and the container images from the ConfigMap created by the Alauda Build of Jaeger v2 cluster plugin:
+2. Retrieve platform configuration from the cluster and the container images from the ConfigMap created by the Alauda Container Platform Distributed Tracing cluster plugin:
 
     ```bash {name=install-mt-tracing-opensearch:get-platform-config}
     export PLATFORM_URL=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.platformURL}')

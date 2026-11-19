@@ -21,7 +21,7 @@ Starting in ACP 4.5, the following plugins have new names:
 Search for the new names when you download the plugins from the Customer Portal. A plugin package published before the rename still shows the former name in the platform after you upload it.
 :::
 
-## Installing the Alauda Container Platform Distributed Tracing Cluster Plugin \{#installing-the-alauda-build-of-jaeger-v2-cluster-plugin}
+## Installing the Alauda Container Platform Distributed Tracing Cluster Plugin \{#installing-the-alauda-container-platform-distributed-tracing-cluster-plugin}
 
 The Alauda Container Platform Distributed Tracing cluster plugin ships the container images required by the tracing components: Jaeger (`jaeger`, `jaeger-es-rollover`, `jaeger-es-index-cleaner`) and OAuth2 Proxy. Installing the plugin synchronizes these images to the platform's built-in registry and creates a ConfigMap named `jaeger-cluster-plugin-manifest` in the `cpaas-system` namespace of the target cluster. Later steps read the image addresses from this ConfigMap.
 
@@ -154,7 +154,7 @@ Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/ins
 
 Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/installing/install-opentelemetry.html#installing-via-the-cli" children="Installing via the CLI" /> section of the Alauda Container Platform Application Observability documentation.
 
-## Deploying Jaeger \{#deploying-the-alauda-build-of-jaeger-v2}
+## Deploying Jaeger \{#deploying-jaeger}
 
 Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by the Alauda Container Platform Application Observability Operator. It uses a [backend storage](../configuration/storage-backends/index.mdx) and integrates with the Alauda Container Platform authentication system through an OAuth2 Proxy sidecar.
 
