@@ -451,9 +451,10 @@ EOF
     }
 
     # 注释块：未登录浏览器跳转平台登录页。ALB 规则生效有延迟，重试
+    # 不锚定行首：runme 启动的交互 shell 可能先输出终端转义序列（如 iTerm2 集成的 OSC 1337）
     log_info "步骤 14: 验证网关把未登录浏览器重定向到平台登录页"
     retry_command "runme run ${MT_PREFIX}:verify-gateway-login-redirect 2>&1 \
-        | tee /dev/stderr | grep -qE '^302 https?://[^ ]+/auth\\?client_id='" 18 10 || {
+        | tee /dev/stderr | grep -qE '302 https?://[^ ]+/auth[?]client_id='" 18 10 || {
         log_error "网关登录重定向验证失败"
         return 1
     }
