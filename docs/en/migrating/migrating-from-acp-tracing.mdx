@@ -343,6 +343,11 @@ Trace ingestion is restored at this point. New traces are written to the new Jae
       name: jaeger-migration-check
     spec:
       restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: telemetrygen
           image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
@@ -353,6 +358,10 @@ Trace ingestion is restored at this point. New traces are written to the new Jae
             - --duration=120s
             - --service=jaeger-migration-check
             - --rate=2
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
     EOF
 
     kubectl wait -n cpaas-system --for=jsonpath='{.status.phase}'=Succeeded \

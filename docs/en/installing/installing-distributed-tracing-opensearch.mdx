@@ -853,6 +853,11 @@ After installing all components, verify the end-to-end tracing pipeline by gener
       namespace: ${JAEGER_NS}
     spec:
       restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: telemetrygen
           image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
@@ -866,6 +871,10 @@ After installing all components, verify the end-to-end tracing pipeline by gener
             - --rate=2
             - --service=telemetrygen
             - --workers=1
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
     EOF
     # Wait for telemetrygen to complete, then clean up the test Pod
     kubectl wait -n ${JAEGER_NS} --for=jsonpath='{.status.phase}'=Succeeded pod/telemetrygen --timeout=10m
