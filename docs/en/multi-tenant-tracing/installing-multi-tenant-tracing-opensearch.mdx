@@ -791,10 +791,6 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     EOF
     ```
 
-    :::note
-    Do not add the `nginx.ingress.kubernetes.io/enable-cors` annotation. The Jaeger UI and the Query API share the same origin, so CORS is not needed, and the annotation makes the Ingress add `Access-Control-Allow-Origin: *` to every response.
-    :::
-
     Wait for the Ingress to be ready:
 
     ```bash {name=install-mt-tracing-opensearch:wait-jaeger-ingress}
