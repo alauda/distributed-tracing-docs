@@ -798,7 +798,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
       -n ${JAEGER_NS} --timeout=180s
     ```
 
-15. Create a `ServiceMonitor` so that ACP Prometheus scrapes the gateway metrics:
+15. Create a `ServiceMonitor` so that ACP Prometheus scrapes the observability gateway metrics:
 
     ```bash {name=install-mt-tracing-opensearch:create-gateway-servicemonitor}
     kubectl apply -f - <<EOF
@@ -813,7 +813,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
       endpoints:
         - port: gateway-ops
           path: /metrics
-          interval: 30s
+          interval: 60s
       namespaceSelector:
         matchNames:
           - ${JAEGER_NS}
