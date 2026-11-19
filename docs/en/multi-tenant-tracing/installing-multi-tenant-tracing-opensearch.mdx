@@ -14,7 +14,7 @@ Installing multi-tenant tracing involves the following steps:
 
 1. Installing the Alauda Build of Jaeger v2 cluster plugin
 2. Granting the OpenTelemetry Operator permission to create RBAC resources
-3. Installing the Alauda Build of OpenTelemetry v2 Operator
+3. Installing the Alauda Container Platform Application Observability Operator
 4. Deploying the Alauda Build of Jaeger v2 with the observability gateway
 5. Deploying the platform OpenTelemetry Collector
 6. Verifying tenant isolation
@@ -98,7 +98,7 @@ Cluster plugins are installed by creating a `ModuleInfo` resource **in the `glob
 
 ## Granting the OpenTelemetry Operator Permission to Create RBAC Resources \{#granting-the-opentelemetry-operator-permission-to-create-rbac-resources}
 
-The platform OpenTelemetry Collector uses the `k8s_attributes` processor, which requires permission to read Pods, Namespaces, and ReplicaSets across the cluster. The Alauda Build of OpenTelemetry v2 Operator creates the required ClusterRole and ClusterRoleBinding for the Collector automatically, but only after you allow it to manage cluster-level RBAC resources. For details, see <ExternalSiteLink name="opentelemetry" href="/installing/rbac-resources.html" children="Creating the Required RBAC Resources Automatically" />.
+The platform OpenTelemetry Collector uses the `k8s_attributes` processor, which requires permission to read Pods, Namespaces, and ReplicaSets across the cluster. The Alauda Container Platform Application Observability Operator creates the required ClusterRole and ClusterRoleBinding for the Collector automatically, but only after you allow it to manage cluster-level RBAC resources. For details, see <ExternalSiteLink name="opentelemetry" href="/installing/rbac-resources.html" children="Creating the Required RBAC Resources Automatically" />.
 
 Create the following resources **before** you install the Operator. If the Operator is already installed, create them and then restart the Operator as described in step 3.
 
@@ -158,21 +158,21 @@ Create the following resources **before** you install the Operator. If the Opera
 
     Skip this step if you created the resources before installing the Operator.
 
-## Installing the Alauda Build of OpenTelemetry v2 Operator \{#installing-the-alauda-build-of-opentelemetry-v2-operator}
+## Installing the Alauda Container Platform Application Observability Operator \{#installing-the-alauda-build-of-opentelemetry-v2-operator}
 
-The Alauda Build of OpenTelemetry v2 Operator manages the lifecycle of Jaeger v2 and OpenTelemetry Collector instances. You must install this Operator before deploying any tracing components.
+The Alauda Container Platform Application Observability Operator manages the lifecycle of Jaeger v2 and OpenTelemetry Collector instances. You must install this Operator before deploying any tracing components.
 
 ### Installing via the web console
 
-Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/installing/install-opentelemetry.html#installing-via-the-web-console" children="Installing via the web console" /> section of the Alauda Build of OpenTelemetry v2 documentation.
+Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/installing/install-opentelemetry.html#installing-via-the-web-console" children="Installing via the web console" /> section of the Alauda Container Platform Application Observability documentation.
 
 ### Installing via the CLI
 
-Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/installing/install-opentelemetry.html#installing-via-the-cli" children="Installing via the CLI" /> section of the Alauda Build of OpenTelemetry v2 documentation.
+Follow the instructions in the <ExternalSiteLink name="opentelemetry" href="/installing/install-opentelemetry.html#installing-via-the-cli" children="Installing via the CLI" /> section of the Alauda Container Platform Application Observability documentation.
 
 ## Deploying the Alauda Build of Jaeger v2 with the Observability Gateway \{#deploying-the-alauda-build-of-jaeger-v2-with-the-observability-gateway}
 
-Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by the Alauda Build of OpenTelemetry v2 Operator. It uses a [backend storage](../configuration/storage-backends/index.mdx) and runs the observability gateway as a sidecar. The gateway authenticates users through Alauda Container Platform and authorizes every query against the Kubernetes RBAC of the cluster.
+Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by the Alauda Container Platform Application Observability Operator. It uses a [backend storage](../configuration/storage-backends/index.mdx) and runs the observability gateway as a sidecar. The gateway authenticates users through Alauda Container Platform and authorizes every query against the Kubernetes RBAC of the cluster.
 
 **Prerequisites**
 
