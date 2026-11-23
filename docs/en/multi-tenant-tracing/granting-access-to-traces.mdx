@@ -8,11 +8,11 @@ weight: 15
 Multi-tenant tracing is a Technology Preview feature. Evaluate it within the documented limits.
 :::
 
-The gateway lets a user view the traces of a namespace when the user is allowed to `get` the `traces` resource of the `tracing.alauda.io` API group in that namespace. The `tracing.alauda.io:traces-viewer` ClusterRole created by the cluster plugin grants this permission.
+The gateway lets a user view the traces of a namespace when the user is allowed to `get` the `traces` resource of the `tracing.alauda.io` API group in that namespace. The `tracing.alauda.io:traces-viewer` ClusterRole created by the Cluster Plugin grants this permission.
 
 - **Platform administrators** can view all traces.
 - **Built-in roles**: the ClusterRole is aggregated into the namespace administrator, namespace developer, and project administrator roles of the cluster. Users with these roles can view the traces of the namespaces the roles apply to, without further configuration.
 
 :::warning
-Uninstalling the cluster plugin deletes the `tracing.alauda.io:traces-viewer` ClusterRole. Afterwards only platform administrators can view traces through the gateway.
+Uninstalling the Cluster Plugin deletes the `tracing.alauda.io:traces-viewer` ClusterRole. Afterwards only platform administrators can view traces through the gateway.
 :::

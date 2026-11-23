@@ -12,7 +12,7 @@ In a multi-tenant installation, the observability gateway takes the place of the
 
 Installing multi-tenant tracing involves the following steps:
 
-1. Installing the Alauda Container Platform Distributed Tracing cluster plugin
+1. Installing the Alauda Container Platform Distributed Tracing Cluster Plugin
 2. Granting the OpenTelemetry Operator permission to create RBAC resources
 3. Installing the Alauda Container Platform Application Observability Operator
 4. Deploying Alauda Container Platform Distributed Tracing with the observability gateway
@@ -32,7 +32,7 @@ Search for the new names when you download the plugins from the Customer Portal.
 
 ## Installing the Alauda Container Platform Distributed Tracing Cluster Plugin \{#installing-the-alauda-container-platform-distributed-tracing-cluster-plugin}
 
-Multi-tenant tracing requires the Alauda Container Platform Distributed Tracing cluster plugin **v2.2.0 or later**. The plugin ships the container images required by the tracing components, including the observability gateway, and creates the following resources in the target cluster:
+Multi-tenant tracing requires the Alauda Container Platform Distributed Tracing Cluster Plugin **v2.2.0 or later**. The plugin ships the container images required by the tracing components, including the observability gateway, and creates the following resources in the target cluster:
 
 - A ConfigMap named `jaeger-cluster-plugin-manifest` in the `cpaas-system` namespace. Later steps read the image addresses from this ConfigMap.
 - A ClusterRole named `tracing.alauda.io:traces-viewer`, which grants `get` on the `traces` resource of the `tracing.alauda.io` API group. The gateway checks this permission to decide which namespaces a user can view. See [Granting Access to Traces](./granting-access-to-traces.mdx).
@@ -49,7 +49,7 @@ If the plugin is not listed, download the plugin package from the Customer Porta
 
 ### Installing via the CLI
 
-Cluster plugins are installed by creating a `ModuleInfo` resource **in the `global` cluster**, regardless of which cluster the plugin targets.
+Cluster Plugins are installed by creating a `ModuleInfo` resource **in the `global` cluster**, regardless of which cluster the plugin targets.
 
 1. Run the following command in the `global` cluster to check the published plugin versions:
 
@@ -176,7 +176,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
 **Prerequisites**
 
-- The **Alauda Container Platform Distributed Tracing** (previously **Alauda Build of Jaeger v2**) cluster plugin v2.2.0 or later is installed.
+- The **Alauda Container Platform Distributed Tracing** (previously **Alauda Build of Jaeger v2**) Cluster Plugin v2.2.0 or later is installed.
 - The **Alauda Container Platform Application Observability** (previously **Alauda Build of OpenTelemetry v2**) Operator is installed.
 - An OpenSearch 3.x instance is available, and you have the endpoint URL, username, and password for it.
 - An active ACP CLI (`kubectl`) session by a cluster administrator with the `cluster-admin` role in the target cluster.
@@ -194,7 +194,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
     Replace the placeholder values with your actual OpenSearch credentials.
 
-2. Retrieve platform configuration from the cluster and the container images from the ConfigMap created by the Alauda Container Platform Distributed Tracing cluster plugin:
+2. Retrieve platform configuration from the cluster and the container images from the ConfigMap created by the Alauda Container Platform Distributed Tracing Cluster Plugin:
 
     ```bash {name=install-mt-tracing-opensearch:get-platform-config}
     export PLATFORM_URL=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.platformURL}')
