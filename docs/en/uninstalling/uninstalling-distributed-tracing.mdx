@@ -12,7 +12,7 @@ Uninstalling the Alauda Distributed Tracing involves deleting the following comp
 - Jaeger v2 (`jaeger`) instance
 - Jaeger namespace
 
-Optionally, you can also uninstall the Alauda Build of OpenTelemetry v2 Operator and the Alauda Build of Jaeger v2 cluster plugin if they are no longer needed.
+Optionally, you can also uninstall the Alauda Build of OpenTelemetry v2 Operator and the Alauda Build of Jaeger v2 Cluster Plugin if they are no longer needed.
 
 ## Uninstalling via the web console
 
@@ -71,7 +71,7 @@ For more details, see <ExternalSiteLink name="opentelemetry" href="/uninstalling
 ### (Optional) Uninstall the Alauda Build of Jaeger v2 Cluster Plugin
 
 :::warning
-The cluster plugin provides the container images used by every Alauda Distributed Tracing component on the target cluster. Uninstall it only after all Jaeger v2 and OpenTelemetry Collector instances on that cluster have been removed.
+The Cluster Plugin provides the container images used by every Alauda Distributed Tracing component on the target cluster. Uninstall it only after all Jaeger v2 and OpenTelemetry Collector instances on that cluster have been removed.
 :::
 
 1. In the platform management view, navigate to **Administrator** > **Marketplace** > **Cluster Plugins**.
@@ -163,10 +163,10 @@ For more details, see <ExternalSiteLink name="opentelemetry" href="/uninstalling
 ### (Optional) Uninstall the Alauda Build of Jaeger v2 Cluster Plugin
 
 :::warning
-The cluster plugin provides the container images used by every Alauda Distributed Tracing component on the target cluster. Uninstall it only after all Jaeger v2 and OpenTelemetry Collector instances on that cluster have been removed.
+The Cluster Plugin provides the container images used by every Alauda Distributed Tracing component on the target cluster. Uninstall it only after all Jaeger v2 and OpenTelemetry Collector instances on that cluster have been removed.
 :::
 
-Cluster plugins are uninstalled by deleting their `ModuleInfo` resource **in the `global` cluster**, regardless of which cluster the plugin targets.
+Cluster Plugins are uninstalled by deleting their `ModuleInfo` resource **in the `global` cluster**, regardless of which cluster the plugin targets.
 
 1. Run the following command in the `global` cluster to list the installed plugin. The `CLUSTER` column shows which cluster each entry targets:
 

@@ -49,7 +49,7 @@ The tool detects the backend from the ping endpoint and switches the lifecycle-s
 | Rollover alias in the index template | `index.lifecycle.rollover_alias` | `index.plugins.index_state_management.rollover_alias` |
 | How a policy is attached to an index | `index.lifecycle.name`, written into the index template | `ism_template` patterns, declared inside the policy |
 
-The `jaeger-es-rollover` image address is published by the Alauda Build of Jaeger v2 cluster plugin in the `jaeger-cluster-plugin-manifest` ConfigMap, so that it always matches the deployed Jaeger version:
+The `jaeger-es-rollover` image address is published by the Alauda Build of Jaeger v2 Cluster Plugin in the `jaeger-cluster-plugin-manifest` ConfigMap, so that it always matches the deployed Jaeger version:
 
 ```bash
 export JAEGER_ES_ROLLOVER_IMAGE=$(kubectl -ncpaas-system get configmap jaeger-cluster-plugin-manifest -o jsonpath='{.data.jaeger-es-rollover-image}')

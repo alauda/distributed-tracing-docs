@@ -6,7 +6,7 @@ weight: 10
 
 Installing the Alauda Distributed Tracing platform involves the following steps:
 
-1. Installing the Alauda Build of Jaeger v2 cluster plugin
+1. Installing the Alauda Build of Jaeger v2 Cluster Plugin
 2. Installing the Alauda Build of OpenTelemetry v2 Operator
 3. Deploying the Alauda Build of Jaeger v2
 4. Deploying the OpenTelemetry Collector to forward traces to Jaeger
@@ -22,7 +22,7 @@ Search for the new names when you download the plugins from the Customer Portal.
 
 ## Installing the Alauda Build of Jaeger v2 Cluster Plugin \{#installing-the-alauda-build-of-jaeger-v2-cluster-plugin}
 
-The Alauda Build of Jaeger v2 cluster plugin ships the container images required by the tracing components: Jaeger (`jaeger`, `jaeger-es-rollover`, `jaeger-es-index-cleaner`) and OAuth2 Proxy. Installing the plugin synchronizes these images to the platform's built-in registry and creates a ConfigMap named `jaeger-cluster-plugin-manifest` in the `cpaas-system` namespace of the target cluster. Later steps read the image addresses from this ConfigMap.
+The Alauda Build of Jaeger v2 Cluster Plugin ships the container images required by the tracing components: Jaeger (`jaeger`, `jaeger-es-rollover`, `jaeger-es-index-cleaner`) and OAuth2 Proxy. Installing the plugin synchronizes these images to the platform's built-in registry and creates a ConfigMap named `jaeger-cluster-plugin-manifest` in the `cpaas-system` namespace of the target cluster. Later steps read the image addresses from this ConfigMap.
 
 ### Installing via the web console
 
@@ -36,7 +36,7 @@ If the plugin is not listed, download the plugin package from the Customer Porta
 
 ### Installing via the CLI
 
-Cluster plugins are installed by creating a `ModuleInfo` resource **in the `global` cluster**, regardless of which cluster the plugin targets.
+Cluster Plugins are installed by creating a `ModuleInfo` resource **in the `global` cluster**, regardless of which cluster the plugin targets.
 
 1. Run the following command in the `global` cluster to check the published plugin versions:
 
@@ -97,7 +97,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
 **Prerequisites**
 
-- The **Alauda Container Platform Distributed Tracing** (previously **Alauda Build of Jaeger v2**) cluster plugin is installed.
+- The **Alauda Container Platform Distributed Tracing** (previously **Alauda Build of Jaeger v2**) Cluster Plugin is installed.
 - The **Alauda Container Platform Application Observability** (previously **Alauda Build of OpenTelemetry v2**) Operator is installed.
 - An OpenSearch 3.x instance is available, and you have the endpoint URL, username, and password for it.
 - An active ACP CLI (`kubectl`) session by a cluster administrator with the `cluster-admin` role.
@@ -114,7 +114,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
 
     Replace the placeholder values with your actual OpenSearch credentials.
 
-2. Retrieve platform configuration from the cluster and the Jaeger-related container images from the ConfigMap created by the Alauda Build of Jaeger v2 cluster plugin:
+2. Retrieve platform configuration from the cluster and the Jaeger-related container images from the ConfigMap created by the Alauda Build of Jaeger v2 Cluster Plugin:
 
     ```bash {name=install-tracing-opensearch:get-platform-config}
     export PLATFORM_URL=$(kubectl -nkube-public get configmap global-info -o jsonpath='{.data.platformURL}')
