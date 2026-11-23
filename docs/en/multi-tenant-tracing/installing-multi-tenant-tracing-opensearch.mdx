@@ -1038,7 +1038,7 @@ Generate trace data in two namespaces, and compare what a platform administrator
     export TEST_NS_B='<namespace B>'
     ```
 
-2. As a platform administrator, create a test user and assign the user the namespace developer role (**Developers**) in namespace A. See <ExternalSiteLink name="acp" href="/security/users_and_roles/user/functions/create_user.html" children="Create User" /> and <ExternalSiteLink name="acp" href="/security/users_and_roles/user/functions/add_role.html" children="Manage User Roles" />.
+2. As a platform administrator, create a test user and assign the user the namespace developer role (**Developers**) in namespace A. See the user management documentation of Alauda Container Platform for creating users and assigning roles.
 
 3. Deploy `telemetrygen` as a test client in each namespace. It sends sample traces to the platform Collector:
 
@@ -1090,7 +1090,7 @@ Generate trace data in two namespaces, and compare what a platform administrator
     - The spans of `telemetrygen.<namespace A>` keep all their tags, as in the previous step.
     - The spans of `telemetrygen.<namespace B>` are masked: the `Process` section lists only `k8s.namespace.name`, and the `Tags` section lists only status tags, such as `span.kind`.
 
-6. Delete the test user. See <ExternalSiteLink name="acp" href="/security/users_and_roles/user/functions/manage_user.html" children="User Management" />.
+6. Delete the test user. See the user management documentation of Alauda Container Platform.
 
 {/*
 Automated verification with a ServiceAccount token, which replaces the test user of steps 2 to 6. Run steps 1 and 3 of this section first: set `TEST_NS_A` and `TEST_NS_B`, and run `install-mt-tracing-opensearch:deploy-telemetrygen`.
