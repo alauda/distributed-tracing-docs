@@ -104,30 +104,47 @@ EOF
     return 0
 }
 
-# 抓取单个 Jaeger pod 的 :8889 指标，输出其聚合的 spm-ha-svc-* 列表（每行一个，去重）
+# 识别 service 名后缀：前置 otel 的 traces pipeline 含 transform/service-ns 时，service 被改名为
+# <service>.<JAEGER_NS>（load_balancing 也按改名后的名字分流），否则保持原名。
+# 输出供 grep -E 使用的后缀正则（可能为空）。
+_spm_ha_svc_suffix_re() {
+    local procs
+    procs=$(kubectl -n "$JAEGER_NS" get opentelemetrycollector otel \
+        -o jsonpath='{.spec.config.service.pipelines.traces.processors}' 2>/dev/null)
+    case "$procs" in
+        *transform/service-ns*) printf '\\.%s' "${JAEGER_NS//./\\.}" ;;
+    esac
+}
+
+# 读取单个 Jaeger pod 的 :8889 指标，输出其聚合的 spm-ha-svc-N 列表（每行一个，去重）。
+# 走 apiserver 的 pods/proxy 同步读取，不用 port-forward：后者要在固定时间窗内起监听，
+# 执行机慢时读空（ACP-58952）。读取失败返回非 0，由调用方记录。
+# 只认带预期后缀的名字：未带后缀的（k8s_attributes 尚未识别新 Pod 时的个别 span）是另一个
+# 路由 key，不计入，避免误判跨副本重复。
 _spm_ha_pod_services() {
-    local pod="$1" port="$2" out
-    timeout 5 kubectl -n "$JAEGER_NS" port-forward "pod/$pod" "${port}:8889" >/dev/null 2>&1 &
-    out=$(curl -s --retry-connrefused --retry 15 --retry-delay 1 --max-time 22 "http://localhost:${port}/metrics")
-    printf '%s' "$out" | grep -oE 'service_name="spm-ha-svc-[0-9]+"' \
-        | sed -E 's/.*"(spm-ha-svc-[0-9]+)".*/\1/' | sort -u
+    local pod="$1" suffix_re="$2" out
+    out=$(kubectl get --request-timeout=20s \
+        --raw "/api/v1/namespaces/${JAEGER_NS}/pods/${pod}:8889/proxy/metrics" 2>/dev/null) || return 1
+    printf '%s' "$out" | grep -oE "service_name=\"spm-ha-svc-[0-9]+${suffix_re}\"" \
+        | sed -E 's/.*"(spm-ha-svc-[0-9]+)[^"]*"/\1/' | sort -u
+    return 0
 }
 
 # 单次收集逐副本 service 并校验。
 # 返回: 0=完整通过(无重复且并集==count)；2=无重复但不完整；1=发现跨副本重复(失败)
 # 副作用: 设置 __SPM_HA_UNIQ_COUNT。
 _spm_ha_collect_once() {
-    local count="$1" tmpdir pods pod port i
+    local count="$1" tmpdir pods pod
     tmpdir=$(mktemp -d)
     pods=$(kubectl -n "$JAEGER_NS" get pod -l app.kubernetes.io/name=jaeger-collector \
         --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}')
-    i=0
     for pod in $pods; do
-        port=$((19900 + i)); i=$((i + 1))
-        _spm_ha_pod_services "$pod" "$port" > "$tmpdir/$pod"
-        log_info "  副本 ${pod} 聚合 service: [$(tr '\n' ' ' < "$tmpdir/$pod")]"
+        if _spm_ha_pod_services "$pod" "$__SPM_HA_SUFFIX_RE" > "$tmpdir/$pod"; then
+            log_info "  副本 ${pod} 聚合 service: [$(tr '\n' ' ' < "$tmpdir/$pod")]"
+        else
+            log_warn "  副本 ${pod} 的 :8889 指标读取失败（pods/proxy），本轮按空计"
+        fi
     done
-    wait 2>/dev/null
 
     local all dup uniq_count
     all=$(cat "$tmpdir"/* 2>/dev/null | sort)
@@ -184,6 +201,10 @@ _spm_ha_run() {
         return 0
     fi
     _spm_ha_precheck || return 1
+    __SPM_HA_SUFFIX_RE="$(_spm_ha_svc_suffix_re)"
+    if [ -n "$__SPM_HA_SUFFIX_RE" ]; then
+        log_info "otel 含 transform/service-ns，Jaeger 中的 service 名为 spm-ha-svc-N.${JAEGER_NS}"
+    fi
     _spm_ha_scale "$SPM_HA_REPLICAS" || { log_error "扩容失败"; return 1; }
     _spm_ha_deploy_telemetrygen "$SPM_HA_SVC_COUNT" || return 1
     _spm_ha_verify_single_writer "$SPM_HA_SVC_COUNT" || return 1
