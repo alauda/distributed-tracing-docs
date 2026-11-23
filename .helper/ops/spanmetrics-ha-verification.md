@@ -123,15 +123,14 @@ kubectl -n ${JAEGER_NS} get pod -l app.kubernetes.io/name=jaeger-collector \
 | while read -r pod; do
     [ -n "$pod" ] || continue
     echo "=== 副本 $pod 上聚合的 service ==="
-    # timeout 自动回收端口转发；curl 完成后 wait 回收，再处理下一个副本（复用同一端口 19900）
-    timeout 5 kubectl -n ${JAEGER_NS} port-forward "pod/$pod" 19900:8889 >/dev/null 2>&1 &
-    pf=$!
-    curl -s --retry-connrefused --retry 12 --retry-delay 1 --max-time 15 \
-      "http://localhost:19900/metrics" \
-      | grep -oE 'service_name="spm-ha-svc-[0-9]+"' | sort -u
-    wait "$pf" 2>/dev/null
+    # 经 apiserver 的 pods/proxy 同步读取，不用 port-forward（固定时间窗内起不来就读空）
+    kubectl get --request-timeout=20s \
+      --raw "/api/v1/namespaces/${JAEGER_NS}/pods/${pod}:8889/proxy/metrics" \
+      | grep -oE 'service_name="spm-ha-svc-[0-9]+[^"]*"' | sort -u
   done
 ```
+
+> 前置 otel 的 traces pipeline 含 `transform/service-ns`（main 分支的安装文档）时，service 被改名为 `<service>.<JAEGER_NS>`（如 `spm-ha-svc-0.jaeger-system`），`load_balancing` 也按改名后的名字分流；不含时保持原名 `spm-ha-svc-N`。判定时以实际出现的那一种为准，同一 service 只看一种形态。
 
 ### 判定标准
 
@@ -141,14 +140,14 @@ kubectl -n ${JAEGER_NS} get pod -l app.kubernetes.io/name=jaeger-collector \
 ### 真实环境示例输出（2 副本）
 
 ```text
-=== 副本 jaeger-collector-69c7484c94-jkhm7 上聚合的 service ===
+=== 副本 jaeger-collector-75b4f7644b-xnfcn 上聚合的 service ===
 service_name="spm-ha-svc-0"
 service_name="spm-ha-svc-1"
 service_name="spm-ha-svc-3"
-service_name="spm-ha-svc-4"
-=== 副本 jaeger-collector-69c7484c94-xxgc8 上聚合的 service ===
-service_name="spm-ha-svc-2"
 service_name="spm-ha-svc-5"
+=== 副本 jaeger-collector-75b4f7644b-smqs9 上聚合的 service ===
+service_name="spm-ha-svc-2"
+service_name="spm-ha-svc-4"
 ```
 
 6 个 service 分散到 2 个副本（4 + 2），互不重叠 → **验证通过**。
