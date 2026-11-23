@@ -140,14 +140,14 @@ kubectl -n ${JAEGER_NS} get pod -l app.kubernetes.io/name=jaeger-collector \
 ### 真实环境示例输出（2 副本）
 
 ```text
-=== 副本 jaeger-collector-75b4f7644b-28hts 上聚合的 service ===
-service_name="spm-ha-svc-0.jaeger-system"
-service_name="spm-ha-svc-2.jaeger-system"
-service_name="spm-ha-svc-3.jaeger-system"
-service_name="spm-ha-svc-4.jaeger-system"
-=== 副本 jaeger-collector-75b4f7644b-hk2zt 上聚合的 service ===
-service_name="spm-ha-svc-1.jaeger-system"
-service_name="spm-ha-svc-5.jaeger-system"
+=== 副本 jaeger-collector-75b4f7644b-xnfcn 上聚合的 service ===
+service_name="spm-ha-svc-0"
+service_name="spm-ha-svc-1"
+service_name="spm-ha-svc-3"
+service_name="spm-ha-svc-5"
+=== 副本 jaeger-collector-75b4f7644b-smqs9 上聚合的 service ===
+service_name="spm-ha-svc-2"
+service_name="spm-ha-svc-4"
 ```
 
 6 个 service 分散到 2 个副本（4 + 2），互不重叠 → **验证通过**。
