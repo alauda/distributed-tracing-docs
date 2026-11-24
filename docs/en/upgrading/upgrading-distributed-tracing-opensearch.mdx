@@ -6,7 +6,7 @@ weight: 20
 
 Upgrading an OpenSearch-backed deployment from v2.0 (Jaeger 2.16.0, Alauda Container Platform Application Observability Operator 0.147.0) to v2.1 (Jaeger 2.20.0, Operator 0.157.0) involves the following steps:
 
-1. Installing the Alauda Container Platform Distributed Tracing cluster plugin
+1. Installing the Alauda Container Platform Distributed Tracing Cluster Plugin
 2. Upgrading the Alauda Container Platform Application Observability Operator
 3. Updating the OpenTelemetry Collector
 4. Migrating index management to ISM
@@ -22,7 +22,7 @@ Existing indices are neither renamed nor reindexed, but Jaeger reads them only t
 **Prerequisites**
 
 - An Alauda Container Platform Distributed Tracing v2.0 deployment installed as described in [Installing Alauda Container Platform Distributed Tracing with OpenSearch](../installing/installing-distributed-tracing-opensearch.mdx).
-- The **Alauda Container Platform Distributed Tracing** (previously **Alauda Build of Jaeger v2**) cluster plugin and the **Alauda Container Platform Application Observability** (previously **Alauda Build of OpenTelemetry v2**) Operator 0.157.0 are published to the platform.
+- The **Alauda Container Platform Distributed Tracing** (previously **Alauda Build of Jaeger v2**) Cluster Plugin and the **Alauda Container Platform Application Observability** (previously **Alauda Build of OpenTelemetry v2**) Operator 0.157.0 are published to the platform.
 - An active ACP CLI (`kubectl`) session by a cluster administrator with the `cluster-admin` role, for both the target cluster and the `global` cluster.
 - Review the [Upgrade Notes](../about/release-notes/v2-1-0.mdx#upgrade-notes) for the behavior changes introduced by this release.
 
@@ -52,7 +52,7 @@ export JAEGER_MAX_TRACE_DURATION="1h"
 
 ## Installing the Alauda Container Platform Distributed Tracing Cluster Plugin \{#installing-the-cluster-plugin}
 
-Starting with v2.1, the container images of the tracing components are delivered by the Alauda Container Platform Distributed Tracing cluster plugin instead of the Operator bundle. Installing the plugin synchronizes the images to the platform's built-in registry and creates the `jaeger-cluster-plugin-manifest` ConfigMap in the `cpaas-system` namespace of the target cluster. The remaining steps read the image addresses from that ConfigMap.
+Starting with v2.1, the container images of the tracing components are delivered by the Alauda Container Platform Distributed Tracing Cluster Plugin instead of the Operator bundle. Installing the plugin synchronizes the images to the platform's built-in registry and creates the `jaeger-cluster-plugin-manifest` ConfigMap in the `cpaas-system` namespace of the target cluster. The remaining steps read the image addresses from that ConfigMap.
 
 ### Installing via the web console
 
@@ -62,7 +62,7 @@ Starting with v2.1, the container images of the tracing components are delivered
 
 ### Installing via the CLI
 
-Cluster plugins are installed by creating a `ModuleInfo` resource **in the `global` cluster**, regardless of which cluster the plugin targets.
+Cluster Plugins are installed by creating a `ModuleInfo` resource **in the `global` cluster**, regardless of which cluster the plugin targets.
 
 1. Run the following command in the `global` cluster to check the published plugin versions:
 

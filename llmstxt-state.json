@@ -131,11 +131,11 @@
       "updated_at": "2026-11-11T02:53:35Z"
     },
     "docs/en/configuration/storage-backends/elasticsearch.mdx": {
-      "sha256": "b5680dfb567eff2001490d1f5955ca4c65a4073944f263db971b7d5acd328dad",
+      "sha256": "4345c8d04f7453b454e768774e29f247a1a6985c037fa1652ef77bedaaa2d8c6",
       "size": 12619,
       "description": "Configures Elasticsearch 8.x as a Jaeger v2 storage backend, covering shard/replica sizing, the query time-range options `max_span_age` (effective only with `rotation.periodic`, silently overridden to 50 years by alias-based rotation) and `max_trace_duration`, and the three index management strategies selected through `indices.<type>.rotation`: time-based indices (`rotation.periodic`), manual rollover (`rotation.manual_rollover`), and ILM-driven rollover (`rotation.auto_rollover`). Documents index rollover initialization with the `jaeger-es-rollover` container image read from the `jaeger-cluster-plugin-manifest` ConfigMap, a sample `jaeger-ilm-policy` curl PUT request defining hot rollover (`max_age`) and delete phases, and the `ES_USE_ILM=true` env var. Warns that the legacy rotation flags (`use_aliases`, `use_ilm`, and the read/write alias flags) are rejected since Jaeger v2.20.0 and must be migrated to the `rotation` configuration.",
       "generation_method": "ai_agent_reading",
-      "updated_at": "2026-11-11T02:53:35Z"
+      "updated_at": "2026-11-23T17:30:21Z"
     },
     "docs/en/configuration/storage-backends/index.mdx": {
       "sha256": "b94fd2cc7f970947a454fa805ac94b66decc4880164cb43fda1a1d89197531d4",
