@@ -309,7 +309,7 @@ Trace ingestion is restored at this point. New traces are written to the new Jae
 
     You should see legacy indices matching `acp-tracing-<cluster>-jaeger-*` (date-stamped, no longer growing) and new indices matching `acp-<cluster>-jaeger-*-000001` (rollover, growing).
 
-4. Spot-check that a real business request produces a trace in the new Jaeger UI. Pick one or two already-instrumented applications, trigger a representative request, and look up its traceID in the new Jaeger UI.
+4. Spot-check that a real application request produces a trace in the new Jaeger UI. Pick one or two already-instrumented applications, trigger a representative request, and look up its traceID in the new Jaeger UI.
 
 </Steps>
 
