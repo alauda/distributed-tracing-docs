@@ -44,7 +44,7 @@ The gateway does not start if the configuration contains an unknown field or an 
 
 | Field | Default | Description |
 |---|---|---|
-| `listen` | `:4180` | Business port. The Jaeger Service and the Ingress forward requests to this port. |
+| `listen` | `:4180` | Serving port. The Jaeger Service and the Ingress forward requests to this port. |
 | `opsListen` | `:8081` | Operations port, which serves `/healthz`, `/readyz`, and `/metrics` without authentication. Do not expose it through the Ingress. |
 | `cluster` | None (required) | Name of the cluster on the platform. |
 | `platform.url` | None (required) | Address of the platform, without a path. The gateway authenticates users and runs the built-in login through it. |

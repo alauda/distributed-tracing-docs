@@ -503,7 +503,7 @@ Jaeger v2 is deployed as an `OpenTelemetryCollector` custom resource managed by 
     ```
 
     <Callouts>
-      1. The business port of the gateway. The Jaeger Service and the Ingress forward requests to this port.
+      1. The serving port of the gateway. The Jaeger Service and the Ingress forward requests to this port.
       2. The operations port, which serves `/healthz`, `/readyz`, and `/metrics`. Do not expose it through the Ingress.
       3. The query service of Jaeger in the same Pod, including the base path.
       4. How the gateway processes spans of namespaces the user cannot access: `mask` (default), `drop`, or `keep`. See [Filtering Policies](./filtering-and-configuration.mdx#filtering-policies).
